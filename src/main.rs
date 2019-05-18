@@ -1,13 +1,37 @@
-//fn main() {
-//    println!("Hello, world!");
-//}
-//
-//extern crate sdl2;
-//
 use sdl2::pixels::Color;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use std::time::Duration;
+
+/*
+
+Design ideas:
+
+Basic building blocks:
+
+    - Timeline, depending on seconds?
+    - Signal-Generator-Nodes, that get T as input and output a float
+    - Draw nodes:
+        - Pixel
+            - Input
+                - HSV Color
+                - X/Y
+        - Rectangle
+            - Input
+                - HSV Color
+                - X/Y
+                - W/H | X2/Y2
+        - Filled Rectangle
+            - Input
+                - HSV Color
+                - X/Y
+                - W/H | X2/Y2
+        - Sprite
+            - X/Y
+            - W/H
+            - Blend Mode
+            - Color Modifier
+*/
 
 pub fn main() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
