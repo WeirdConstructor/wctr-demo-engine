@@ -4,6 +4,7 @@ use sdl2::event::WindowEvent;
 use sdl2::keyboard::Keycode;
 use sdl2::rect::Rect;
 use std::time::{Instant, Duration};
+use std::fs;
 
 /*
 
@@ -54,6 +55,18 @@ Basic building blocks:
     - Tracker Input
 */
 
+fn draw_text(font: &mut sdl2::ttf::Font, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>, x: i32, y: i32, txt: &str) {
+    let txt_crt = canvas.texture_creator();
+
+    let sf = font.render(txt).blended(Color::RGBA(0, 0, 0, 255)).map_err(|e| e.to_string()).unwrap();
+    let mut txt = txt_crt.create_texture_from_surface(&sf).map_err(|e| e.to_string()).unwrap();
+    let tq = txt.query();
+
+
+//    txt.set_color_mod(255, 0, 0);
+    canvas.copy(&txt, None, Some(Rect::new(x, y, tq.width, tq.height))).map_err(|e| e.to_string()).unwrap();
+}
+
 pub fn main() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
@@ -61,24 +74,21 @@ pub fn main() -> Result<(), String> {
     let window = video_subsystem.window("rust-sdl2 demo: Video", 800, 600)
         .position_centered()
         .resizable()
-        .opengl()
+//        .opengl()
         .build()
         .map_err(|e| e.to_string())?;
 
     let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
 
-    canvas.set_draw_color(Color::RGB(255, 0, 255));
-    canvas.clear();
-    canvas.present();
     let mut event_pump = sdl_context.event_pump()?;
 
 
     let ttf_ctx = sdl2::ttf::init().map_err(|e| e.to_string())?;
 
     let mut font = ttf_ctx.load_font("DejaVuSansMono.ttf", 10).map_err(|e| e.to_string())?;
-//    font.set_style(sdl2::ttf::FontStyle::BOLD);
-
-    let txt_crt = canvas.texture_creator();
+//    font.set_style(sdl2::ttf::FontStyle::BOLD | sdl2::ttf::FontStyle::UNDERLINE);
+    font.set_hinting(sdl2::ttf::Hinting::Mono);
+    font.set_kerning(false);
 
     let mut cnt = 0;
     let mut frame_time = 0;
@@ -106,15 +116,23 @@ pub fn main() -> Result<(), String> {
 
         cnt += 1;
 
-        canvas.set_draw_color(Color::RGB(255, 0, 255));
+        canvas.set_draw_color(Color::RGB(255, 255, 255));
         canvas.clear();
 
-        let sf = font.render(&format!("FOOOäß§O {} / {}|{}", cnt, frame_time, last_wait_time)).blended(Color::RGBA(0, 0, 0, 255)).map_err(|e| e.to_string())?;
-        let txt = txt_crt.create_texture_from_surface(&sf).map_err(|e| e.to_string())?;
-        let tq = txt.query();
+        let mut y = 0i32;
+        for e in fs::read_dir(".").unwrap() {
+            let pth = e.unwrap().path();
+            if pth.is_dir() {
+                draw_text(&mut font, &mut canvas, 0, y, &format!("D {}", pth.file_name().unwrap().to_string_lossy()));
+            } else if pth.is_file() {
+                draw_text(&mut font, &mut canvas, 0, y, &format!("f {}", pth.file_name().unwrap().to_string_lossy()));
+            } else {
+                draw_text(&mut font, &mut canvas, 0, y, &format!("? {}", pth.file_name().unwrap().to_string_lossy()));
+            }
+//            let dir = entry?;
 
-        canvas.copy(&txt, None, Some(Rect::new(10, 10, tq.width, tq.height))).map_err(|e| e.to_string())?;
-
+            y += font.height();
+        }
 
         canvas.present();
 
