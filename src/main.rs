@@ -1,7 +1,9 @@
 use sdl2::pixels::Color;
 use sdl2::event::Event;
+use sdl2::event::WindowEvent;
 use sdl2::keyboard::Keycode;
-use std::time::Duration;
+use sdl2::rect::Rect;
+use std::time::{Instant, Duration};
 
 /*
 
@@ -58,6 +60,7 @@ pub fn main() -> Result<(), String> {
 
     let window = video_subsystem.window("rust-sdl2 demo: Video", 800, 600)
         .position_centered()
+        .resizable()
         .opengl()
         .build()
         .map_err(|e| e.to_string())?;
@@ -69,17 +72,58 @@ pub fn main() -> Result<(), String> {
     canvas.present();
     let mut event_pump = sdl_context.event_pump()?;
 
+
+    let ttf_ctx = sdl2::ttf::init().map_err(|e| e.to_string())?;
+
+    let mut font = ttf_ctx.load_font("DejaVuSansMono.ttf", 10).map_err(|e| e.to_string())?;
+//    font.set_style(sdl2::ttf::FontStyle::BOLD);
+
+    let txt_crt = canvas.texture_creator();
+
+    let mut cnt = 0;
+    let mut frame_time = 0;
+    let mut last_wait_time = 0;
     'running: loop {
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    break 'running
-                },
-                _ => {}
-            }
+        let last_frame = Instant::now();
+        let event = event_pump.wait_event();
+        match event {
+            Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                break 'running
+            },
+            Event::Window { win_event: w, timestamp: _, window_id: _ } => {
+                match w {
+                    WindowEvent::Resized(w, h) => {
+                        println!("XHX {},{}", w, h);
+                    },
+                    WindowEvent::SizeChanged(w, h) => {
+                        println!("XHXSC {},{}", w, h);
+                    },
+                    _ => {}
+                }
+            },
+            _ => {}
         }
-        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
-        // The rest of the game loop goes here...
+
+        cnt += 1;
+
+        canvas.set_draw_color(Color::RGB(255, 0, 255));
+        canvas.clear();
+
+        let sf = font.render(&format!("FOOOäß§O {} / {}|{}", cnt, frame_time, last_wait_time)).blended(Color::RGBA(0, 0, 0, 255)).map_err(|e| e.to_string())?;
+        let txt = txt_crt.create_texture_from_surface(&sf).map_err(|e| e.to_string())?;
+        let tq = txt.query();
+
+        canvas.copy(&txt, None, Some(Rect::new(10, 10, tq.width, tq.height))).map_err(|e| e.to_string())?;
+
+
+        canvas.present();
+
+        frame_time = last_frame.elapsed().as_millis();
+        last_wait_time = 16 - (frame_time as i64);
+
+        if last_wait_time > 0 {
+            ::std::thread::sleep(Duration::from_millis(last_wait_time as u64));
+        }
     }
 
     Ok(())
