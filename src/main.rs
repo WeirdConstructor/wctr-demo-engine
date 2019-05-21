@@ -6,6 +6,85 @@ use sdl2::rect::Rect;
 use std::time::{Instant, Duration};
 use std::fs;
 
+pub enum PathRecordType {
+    File,
+    Dir,
+    SymLink,
+}
+
+pub struct PathRecord {
+    pub path:       std::path::PathBuf,
+    pub size:       u64,
+    pub mtime:      std::time::SystemTime,
+    pub path_type:  PathRecordType,
+}
+
+struct PathSheet {
+    pub base:       std::path::PathBuf,
+    pub paths:      std::vec::Vec<PathRecord>,
+}
+
+enum FMError {
+    IOError(std::io::Error),
+}
+
+impl std::convert::From<std::io::Error> for FMError {
+    fn from(error: std::io::Error) -> Self {
+        FMError::IOError(error)
+    }
+}
+
+impl PathSheet {
+    pub fn read(path: &std::path::Path) -> Result<PathSheet, FMError> {
+        let mut sheet_paths = Vec::new();
+
+        for e in fs::read_dir(".")? {
+            let entry = e?;
+            let path  = entry.path();
+            let md    = path.symlink_metadata()?;
+            let ft    = md.file_type();
+
+            let pr = PathRecord {
+                path,
+                size:  md.len(),
+                mtime: md.modified()?,
+                path_type: if ft.is_symlink() {
+                    PathRecordType::SymLink
+                } else if ft.is_dir() {
+                    PathRecordType::Dir
+                } else {
+                    PathRecordType::File
+                },
+            };
+
+            sheet_paths.push(pr);
+        }
+
+        Ok(PathSheet {
+            base:   path.to_path_buf(),
+            paths:  sheet_paths,
+        })
+    }
+}
+
+
+pub enum DrawLineAttr {
+    Dir,
+    File,
+    Special,
+}
+
+pub struct DrawLine {
+    text:   String,
+    time:   std::time::SystemTime,
+    attr:   DrawLineAttr,
+}
+
+pub trait FmPage {
+    fn len(&self) -> usize;
+    fn as_draw_line(&self) -> DrawLine;
+}
+
 /*
 
 Design ideas:
@@ -105,9 +184,6 @@ pub fn main() -> Result<(), String> {
     font.set_hinting(sdl2::ttf::Hinting::Mono);
     font.set_kerning(false);
 
-    let mut cnt = 0;
-    let mut frame_time = 0;
-    let mut last_wait_time = 0;
     'running: loop {
         let last_frame = Instant::now();
         let event = event_pump.wait_event();
@@ -129,8 +205,6 @@ pub fn main() -> Result<(), String> {
             _ => {}
         }
 
-        cnt += 1;
-
         canvas.set_draw_color(Color::RGB(255, 255, 255));
         canvas.clear();
 
@@ -151,8 +225,8 @@ pub fn main() -> Result<(), String> {
 
         canvas.present();
 
-        frame_time = last_frame.elapsed().as_millis();
-        last_wait_time = 16 - (frame_time as i64);
+        let frame_time = last_frame.elapsed().as_millis();
+        let last_wait_time = 16 - (frame_time as i64);
 
         if last_wait_time > 0 {
             ::std::thread::sleep(Duration::from_millis(last_wait_time as u64));
