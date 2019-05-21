@@ -67,7 +67,6 @@ impl PathSheet {
     }
 }
 
-
 pub enum DrawLineAttr {
     Dir,
     File,
@@ -75,9 +74,11 @@ pub enum DrawLineAttr {
 }
 
 pub struct DrawLine {
-    text:   String,
-    time:   std::time::SystemTime,
-    attr:   DrawLineAttr,
+    text:           String,
+    time:           std::time::SystemTime,
+    attr:           DrawLineAttr,
+    is_selected:    bool,
+    is_highlighted: bool,
 }
 
 pub trait FmPage {
@@ -134,20 +135,20 @@ Basic building blocks:
     - Tracker Input
 */
 
-const NORM_BG_COLOR  = Color::RGB( 19,  19,  19);
-const NORM_BG2_COLOR = Color::RGB( 38,  38,  38);
-const NORM_BG3_COLOR = Color::RGB( 51,  51,  51);
-const NORM_FG_COLOR  = Color::RGB(229, 229, 229);
-const CURS_BG_COLOR  = Color::RGB(144, 238, 144);
-const CURS_BG_COLOR  = Color::RGB(  0,   0,   0);
-const HIGH_BG_COLOR  = Color::RGB(255,   0,   0);
-const HIGH_FG_COLOR  = Color::RGB(  0,   0,   0);
-const SLCT_BG_COLOR  = Color::RGB(169, 169, 169);
-const SLCT_FG_COLOR  = Color::RGB(  0,   0,   0);
-const DIVIDER_COLOR  = Color::RGB( 34,  69,  34);
-const SCRIND_COLOR   = Color::RGB( 96, 255,  96);
-const DIR_FG_COLOR   = Color::RGB( 64, 255, 255);
-const LNK_FG_COLOR   = Color::RGB(255, 128, 255);
+//const NORM_BG_COLOR  = Color::RGB( 19,  19,  19);
+//const NORM_BG2_COLOR = Color::RGB( 38,  38,  38);
+//const NORM_BG3_COLOR = Color::RGB( 51,  51,  51);
+//const NORM_FG_COLOR  = Color::RGB(229, 229, 229);
+//const CURS_BG_COLOR  = Color::RGB(144, 238, 144);
+//const CURS_BG_COLOR  = Color::RGB(  0,   0,   0);
+//const HIGH_BG_COLOR  = Color::RGB(255,   0,   0);
+//const HIGH_FG_COLOR  = Color::RGB(  0,   0,   0);
+//const SLCT_BG_COLOR  = Color::RGB(169, 169, 169);
+//const SLCT_FG_COLOR  = Color::RGB(  0,   0,   0);
+//const DIVIDER_COLOR  = Color::RGB( 34,  69,  34);
+//const SCRIND_COLOR   = Color::RGB( 96, 255,  96);
+//const DIR_FG_COLOR   = Color::RGB( 64, 255, 255);
+//const LNK_FG_COLOR   = Color::RGB(255, 128, 255);
 
 fn draw_text(font: &mut sdl2::ttf::Font, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>, x: i32, y: i32, txt: &str) {
     let txt_crt = canvas.texture_creator();
