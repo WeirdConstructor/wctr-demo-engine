@@ -3,6 +3,8 @@ use sdl2::event::Event;
 use sdl2::event::WindowEvent;
 use sdl2::keyboard::Keycode;
 use sdl2::rect::Rect;
+use std::rc::Rc;
+use std::cell::RefCell;
 use std::time::{Instant, Duration};
 use std::fs;
 
@@ -20,10 +22,15 @@ pub struct PathRecord {
 }
 
 struct PathSheet {
-    pub base:       std::path::PathBuf,
-    pub paths:      std::vec::Vec<PathRecord>,
+    pub base:           std::path::PathBuf,
+    pub paths:          std::vec::Vec<PathRecord>,
+    pub paths_dirty:    bool,
+    pub state_dirty:    bool,
+    pub cursor_idx:     usize,
+    pub selection:      std::collections::HashSet<usize>,
 }
 
+#[derive(Debug)]
 enum FMError {
     IOError(std::io::Error),
 }
@@ -38,7 +45,7 @@ impl PathSheet {
     pub fn read(path: &std::path::Path) -> Result<PathSheet, FMError> {
         let mut sheet_paths = Vec::new();
 
-        for e in fs::read_dir(".")? {
+        for e in fs::read_dir(path)? {
             let entry = e?;
             let path  = entry.path();
             let md    = path.symlink_metadata()?;
@@ -61,8 +68,12 @@ impl PathSheet {
         }
 
         Ok(PathSheet {
-            base:   path.to_path_buf(),
-            paths:  sheet_paths,
+            base:           path.to_path_buf(),
+            paths:          sheet_paths,
+            cursor_idx:     0,
+            selection:      std::collections::HashSet::new(),
+            paths_dirty:    false,
+            state_dirty:    false,
         })
     }
 }
@@ -77,13 +88,89 @@ pub struct DrawLine {
     text:           String,
     time:           std::time::SystemTime,
     attr:           DrawLineAttr,
-    is_selected:    bool,
-    is_highlighted: bool,
+}
+
+pub struct DrawPage {
+    title:          String,
+    lines:          std::vec::Vec<DrawLine>,
 }
 
 pub trait FmPage {
     fn len(&self) -> usize;
-    fn as_draw_line(&self) -> DrawLine;
+    fn as_draw_page(&self) -> DrawPage;
+    fn is_cursor_here(&self, idx: usize) -> bool;
+    fn is_selected(&self, idx: usize) -> bool;
+    fn needs_repage(&self) -> bool;
+    fn needs_redraw(&self) -> bool;
+}
+
+impl FmPage for PathSheet {
+    fn len(&self) -> usize { self.paths.len() }
+    fn is_cursor_here(&self, idx: usize) -> bool { idx == self.cursor_idx }
+    fn is_selected(&self, idx: usize) -> bool { self.selection.get(&idx).is_some() }
+    fn needs_repage(&self) -> bool { self.paths_dirty }
+    fn needs_redraw(&self) -> bool { self.state_dirty }
+    fn as_draw_page(&self) -> DrawPage {
+        DrawPage {
+            title: String::from(self.base.to_string_lossy()),
+            lines: self.paths.iter().map(|p| {
+                DrawLine {
+                    text: String::from(p.path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy()),
+                    time: p.mtime,
+                    attr: match p.path_type {
+                        PathRecordType::File    => DrawLineAttr::File,
+                        PathRecordType::Dir     => DrawLineAttr::Dir,
+                        PathRecordType::SymLink => DrawLineAttr::Special,
+                    }
+                }
+            }).collect(),
+        }
+    }
+}
+
+struct Page {
+    fm_page:    Rc<dyn FmPage>,
+    cache:      Option<DrawPage>,
+}
+
+pub struct FileManager<'a, 'b> {
+    draw_state:     DrawState<'a, 'b>,
+    left:           std::vec::Vec<Page>,
+    right:          std::vec::Vec<Page>,
+}
+
+enum PanePos {
+    LeftTab,
+    RightTab,
+}
+
+impl<'a, 'b> FileManager<'a, 'b> {
+    fn open_path_in(&mut self, path: &std::path::Path, pos: PanePos) {
+        let ps = PathSheet::read(path).expect("No broken paths please");
+        let r = Rc::new(ps);
+        let pg = Page {
+            fm_page: r,
+            cache: None,
+        };
+        match pos {
+            LeftTab  => self.left.push(pg),
+            RightTab => self.right.push(pg),
+        }
+    }
+
+    fn redraw(&mut self) {
+        if !self.left.is_empty() {
+            let sl = self.left.as_mut_slice();
+            let pg = &mut sl[sl.len() - 1];
+            if pg.cache.is_none() || pg.fm_page.needs_repage() {
+                pg.cache = Some(pg.fm_page.as_draw_page());
+            }
+
+            if pg.cache.is_some() {
+                self.draw_state.draw_page(pg.cache.as_mut().unwrap());
+            }
+        }
+    }
 }
 
 /*
@@ -150,6 +237,34 @@ Basic building blocks:
 //const DIR_FG_COLOR   = Color::RGB( 64, 255, 255);
 //const LNK_FG_COLOR   = Color::RGB(255, 128, 255);
 
+struct DrawState<'a, 'b> {
+    canvas: sdl2::render::Canvas<sdl2::video::Window>,
+    font: Rc<RefCell<sdl2::ttf::Font<'a, 'b>>>,
+}
+
+impl<'a, 'b> DrawState<'a, 'b> {
+    fn clear(&mut self) {
+        self.canvas.set_draw_color(Color::RGB(255, 255, 255));
+        self.canvas.clear();
+    }
+
+    fn done(&mut self) {
+        self.canvas.present();
+    }
+
+    fn draw_page(&mut self, page: &DrawPage) {
+        let mut y = 0i32;
+        for l in page.lines.iter() {
+            draw_text(
+                &mut self.font.borrow_mut(),
+                &mut self.canvas,
+                0, y,
+                &format!("{}", l.text));
+            y += self.font.borrow().height();
+        }
+    }
+}
+
 fn draw_text(font: &mut sdl2::ttf::Font, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>, x: i32, y: i32, txt: &str) {
     let txt_crt = canvas.texture_creator();
 
@@ -173,17 +288,26 @@ pub fn main() -> Result<(), String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
+    let canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
 
     let mut event_pump = sdl_context.event_pump()?;
 
 
     let ttf_ctx = sdl2::ttf::init().map_err(|e| e.to_string())?;
 
-    let mut font = ttf_ctx.load_font("DejaVuSansMono.ttf", 10).map_err(|e| e.to_string())?;
+    let mut font = ttf_ctx.load_font("DejaVuSansMono.ttf", 12).map_err(|e| e.to_string())?;
 //    font.set_style(sdl2::ttf::FontStyle::BOLD | sdl2::ttf::FontStyle::UNDERLINE);
     font.set_hinting(sdl2::ttf::Hinting::Mono);
     font.set_kerning(false);
+
+    let mut fm = FileManager {
+        draw_state: DrawState {
+            canvas: canvas,
+            font: Rc::new(RefCell::new(font)),
+        },
+        left: Vec::new(),
+        right: Vec::new(),
+    };
 
     'running: loop {
         let last_frame = Instant::now();
@@ -206,25 +330,31 @@ pub fn main() -> Result<(), String> {
             _ => {}
         }
 
-        canvas.set_draw_color(Color::RGB(255, 255, 255));
-        canvas.clear();
+        fm.draw_state.clear();
 
-        let mut y = 0i32;
-        for e in fs::read_dir(".").unwrap() {
-            let pth = e.unwrap().path();
-            if pth.is_dir() {
-                draw_text(&mut font, &mut canvas, 0, y, &format!("D {}", pth.file_name().unwrap().to_string_lossy()));
-            } else if pth.is_file() {
-                draw_text(&mut font, &mut canvas, 0, y, &format!("f {}", pth.file_name().unwrap().to_string_lossy()));
-            } else {
-                draw_text(&mut font, &mut canvas, 0, y, &format!("? {}", pth.file_name().unwrap().to_string_lossy()));
-            }
-//            let dir = entry?;
+        let pth = std::path::Path::new("..");
+//        let ps = PathSheet::read(pth).unwrap();
+//        let dp = ps.as_draw_page();
+        fm.open_path_in(pth, PanePos::LeftTab);
+        fm.redraw();
+//        ds.draw_page(&dp);
 
-            y += font.height();
-        }
-
-        canvas.present();
+//        let mut y = 0i32;
+//        for e in fs::read_dir(".").unwrap() {
+//            let pth = e.unwrap().path();
+//            if pth.is_dir() {
+//                draw_text(&mut font, &mut canvas, 0, y, &format!("D {}", pth.file_name().unwrap().to_string_lossy()));
+//            } else if pth.is_file() {
+//                draw_text(&mut font, &mut canvas, 0, y, &format!("f {}", pth.file_name().unwrap().to_string_lossy()));
+//            } else {
+//                draw_text(&mut font, &mut canvas, 0, y, &format!("? {}", pth.file_name().unwrap().to_string_lossy()));
+//            }
+////            let dir = entry?;
+//
+//            y += font.height();
+//        }
+//
+        fm.draw_state.done();
 
         let frame_time = last_frame.elapsed().as_millis();
         let last_wait_time = 16 - (frame_time as i64);
