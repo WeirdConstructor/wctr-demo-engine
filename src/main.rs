@@ -95,9 +95,19 @@ pub struct DrawPage {
     lines:          std::vec::Vec<DrawLine>,
 }
 
+pub struct Column {
+    head:          String,
+    rows:          std::vec::Vec<String>,
+}
+
+pub struct Table {
+    title:  String,
+    table:  std::vec::Vec<Column>,
+}
+
 pub trait FmPage {
     fn len(&self) -> usize;
-    fn as_draw_page(&self) -> DrawPage;
+    fn as_draw_page(&self) -> Table;
     fn is_cursor_here(&self, idx: usize) -> bool;
     fn is_selected(&self, idx: usize) -> bool;
     fn needs_repage(&self) -> bool;
@@ -110,21 +120,35 @@ impl FmPage for PathSheet {
     fn is_selected(&self, idx: usize) -> bool { self.selection.get(&idx).is_some() }
     fn needs_repage(&self) -> bool { self.paths_dirty }
     fn needs_redraw(&self) -> bool { self.state_dirty }
-    fn as_draw_page(&self) -> DrawPage {
-        DrawPage {
-            title: String::from(self.base.to_string_lossy()),
-            lines: self.paths.iter().map(|p| {
-                DrawLine {
-                    text: String::from(p.path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy()),
-                    time: p.mtime,
-                    attr: match p.path_type {
-                        PathRecordType::File    => DrawLineAttr::File,
-                        PathRecordType::Dir     => DrawLineAttr::Dir,
-                        PathRecordType::SymLink => DrawLineAttr::Special,
-                    }
-                }
-            }).collect(),
-        }
+    fn as_draw_page(&self) -> Table {
+        title: String::from(self.base.to_string_lossy()),
+        table: vec![
+            Column {
+                head: String::from("name"),
+                rows: self.paths.iter().map(|p| {
+
+                // Theme draus machen:
+//                    attr: match p.path_type {
+//                        PathRecordType::File    => DrawLineAttr::File,
+//                        PathRecordType::Dir     => DrawLineAttr::Dir,
+//                        PathRecordType::SymLink => DrawLineAttr::Special,
+//                    }
+                    String::from(p.path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy())
+                }).collect(),
+            },
+            Column {
+                head: String::from("time"),
+                rows: self.paths.iter().map(|p| {
+                    String::from("?time?")
+                }).collect(),
+            },
+            Column {
+                head: String::from("size"),
+                rows: self.paths.iter().map(|p| {
+                    String::from("{???}")
+                }).collect(),
+            },
+        ],
     }
 }
 
