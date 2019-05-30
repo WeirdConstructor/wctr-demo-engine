@@ -90,19 +90,16 @@ pub struct DrawLine {
     attr:           DrawLineAttr,
 }
 
-pub struct DrawPage {
-    title:          String,
-    lines:          std::vec::Vec<DrawLine>,
-}
-
 pub struct Column {
     head:          String,
     rows:          std::vec::Vec<String>,
+    min_width:     i32,
+    fract_width:   i32,
 }
 
 pub struct Table {
     title:  String,
-    table:  std::vec::Vec<Column>,
+    columns:  std::vec::Vec<Column>,
 }
 
 pub trait FmPage {
@@ -121,11 +118,14 @@ impl FmPage for PathSheet {
     fn needs_repage(&self) -> bool { self.paths_dirty }
     fn needs_redraw(&self) -> bool { self.state_dirty }
     fn as_draw_page(&self) -> Table {
-        title: String::from(self.base.to_string_lossy()),
-        table: vec![
-            Column {
-                head: String::from("name"),
-                rows: self.paths.iter().map(|p| {
+        Table {
+            title: String::from(self.base.to_string_lossy()),
+            columns: vec![
+                Column {
+                    head: String::from("name"),
+                    min_width: 0,
+                    fract_width: 5,
+                    rows: self.paths.iter().map(|p| {
 
                 // Theme draus machen:
 //                    attr: match p.path_type {
@@ -133,28 +133,33 @@ impl FmPage for PathSheet {
 //                        PathRecordType::Dir     => DrawLineAttr::Dir,
 //                        PathRecordType::SymLink => DrawLineAttr::Special,
 //                    }
-                    String::from(p.path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy())
-                }).collect(),
-            },
-            Column {
-                head: String::from("time"),
-                rows: self.paths.iter().map(|p| {
-                    String::from("?time?")
-                }).collect(),
-            },
-            Column {
-                head: String::from("size"),
-                rows: self.paths.iter().map(|p| {
-                    String::from("{???}")
-                }).collect(),
-            },
-        ],
+                        String::from(p.path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy())
+                    }).collect(),
+                },
+                Column {
+                    head: String::from("time"),
+                    min_width: 0,
+                    fract_width: 2,
+                    rows: self.paths.iter().map(|_p| {
+                        String::from("?time?")
+                    }).collect(),
+                },
+                Column {
+                    head: String::from("size"),
+                    min_width: 0,
+                    fract_width: 1,
+                    rows: self.paths.iter().map(|_p| {
+                        String::from("{???}")
+                    }).collect(),
+                },
+            ],
+        }
     }
 }
 
 struct Page {
     fm_page:    Rc<dyn FmPage>,
-    cache:      Option<DrawPage>,
+    cache:      Option<Table>,
 }
 
 pub struct FileManager<'a, 'b> {
@@ -177,8 +182,8 @@ impl<'a, 'b> FileManager<'a, 'b> {
             cache: None,
         };
         match pos {
-            LeftTab  => self.left.push(pg),
-            RightTab => self.right.push(pg),
+            PanePos::LeftTab  => self.left.push(pg),
+            PanePos::RightTab => self.right.push(pg),
         }
     }
 
@@ -191,7 +196,8 @@ impl<'a, 'b> FileManager<'a, 'b> {
             }
 
             if pg.cache.is_some() {
-                self.draw_state.draw_page(pg.cache.as_mut().unwrap());
+                self.draw_state.draw_table(
+                    pg.cache.as_mut().unwrap(), 0, 0, 300);
             }
         }
     }
@@ -276,29 +282,55 @@ impl<'a, 'b> DrawState<'a, 'b> {
         self.canvas.present();
     }
 
-    fn draw_page(&mut self, page: &DrawPage) {
-        let mut y = 0i32;
-        for l in page.lines.iter() {
+    fn draw_table(&mut self, table: &Table, x_offs: i32, y_offs: i32, width: i32) {
+        let fracts : i32 = table.columns.iter().map(|c| c.fract_width).sum();
+
+        let mut x = x_offs;
+        for column in table.columns.iter() {
+            let mut width = (width * column.fract_width) / fracts;
+            if width < column.min_width { width = column.min_width; }
+
             draw_text(
                 &mut self.font.borrow_mut(),
                 &mut self.canvas,
-                0, y,
-                &format!("{}", l.text));
-            y += self.font.borrow().height();
+                x,
+                y_offs,
+                width,
+                &column.head);
+
+            let mut y = y_offs + self.font.borrow().height();
+
+            for row in column.rows.iter() {
+                draw_text(
+                    &mut self.font.borrow_mut(),
+                    &mut self.canvas,
+                    x,
+                    y,
+                    width,
+                    &row);
+                y += self.font.borrow().height();
+            }
+
+            x += width;
         }
     }
 }
 
-fn draw_text(font: &mut sdl2::ttf::Font, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>, x: i32, y: i32, txt: &str) {
+fn draw_text(font: &mut sdl2::ttf::Font, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>, x: i32, y: i32, max_w: i32, txt: &str) {
     let txt_crt = canvas.texture_creator();
 
     let sf = font.render(txt).blended(Color::RGBA(0, 0, 0, 255)).map_err(|e| e.to_string()).unwrap();
     let mut txt = txt_crt.create_texture_from_surface(&sf).map_err(|e| e.to_string()).unwrap();
     let tq = txt.query();
 
+    let w : i32 = if max_w < (tq.width as i32) { max_w } else { tq.width as i32 };
 
 //    txt.set_color_mod(255, 0, 0);
-    canvas.copy(&txt, None, Some(Rect::new(x, y, tq.width, tq.height))).map_err(|e| e.to_string()).unwrap();
+    canvas.copy(
+        &txt,
+        Some(Rect::new(0, 0, w as u32, tq.height)),
+        Some(Rect::new(x, y, w as u32, tq.height))
+    ).map_err(|e| e.to_string()).unwrap();
 }
 
 pub fn main() -> Result<(), String> {
