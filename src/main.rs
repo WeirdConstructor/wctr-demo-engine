@@ -6,6 +6,7 @@ use sdl2::rect::Rect;
 use sdl2::rect::Point;
 use chrono::offset::Utc;
 use chrono::DateTime;
+//use std::borrow::BorrowMut;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::time::{Instant, Duration};
@@ -30,6 +31,8 @@ struct PathSheet {
     pub paths_dirty:    bool,
     pub state_dirty:    bool,
     pub cursor_idx:     usize,
+    pub recent_linecnt: usize,
+    pub scroll_offset:  usize,
     pub selection:      std::collections::HashSet<usize>,
 }
 
@@ -74,6 +77,8 @@ impl PathSheet {
             base:           path.to_path_buf(),
             paths:          sheet_paths,
             cursor_idx:     0,
+            scroll_offset:  0,
+            recent_linecnt: 0,
             selection:      std::collections::HashSet::new(),
             paths_dirty:    false,
             state_dirty:    false,
@@ -112,26 +117,102 @@ pub struct Table {
     col_gap:    u32,
 }
 
+pub enum PageControl {
+    Back,
+    Access,
+    CursorDown,
+    CursorUp,
+}
+
 pub trait FmPage {
     fn len(&self) -> usize;
     fn as_draw_page(&self) -> Table;
     fn get_cursor_idx(&self) -> usize;
+    fn get_scroll_offs(&self) -> usize;
+    fn do_control(&mut self, ctrl: PageControl);
     fn is_selected(&self, idx: usize) -> bool;
     fn needs_repage(&self) -> bool;
     fn needs_redraw(&self) -> bool;
+
+    fn sort_by_column(&mut self, col_idx: usize);
+
+    fn set_recently_displayed_lines(&mut self, line_count: usize);
 }
 
 impl FmPage for PathSheet {
     fn len(&self) -> usize { self.paths.len() }
     fn get_cursor_idx(&self) -> usize { self.cursor_idx }
+    fn get_scroll_offs(&self) -> usize { self.scroll_offset }
     fn is_selected(&self, idx: usize) -> bool { self.selection.get(&idx).is_some() }
     fn needs_repage(&self) -> bool { self.paths_dirty }
     fn needs_redraw(&self) -> bool { self.state_dirty }
+
+    fn sort_by_column(&mut self, col_idx: usize) {
+        if col_idx == 0 {
+            self.paths.sort_by(|a, b| {
+                let s1 = String::from(
+                    a.path.file_name()
+                    .unwrap_or(std::ffi::OsStr::new(""))
+                    .to_string_lossy());
+                let s2 = String::from(
+                    b.path.file_name()
+                    .unwrap_or(std::ffi::OsStr::new(""))
+                    .to_string_lossy());
+
+                s1.partial_cmp(&s2).unwrap()
+            });
+        } else if col_idx == 1 {
+            self.paths.sort_by(|a, b| a.mtime.partial_cmp(&b.mtime).unwrap());
+        } else if col_idx == 2 {
+            self.paths.sort_by(|a, b| a.size.partial_cmp(&b.size).unwrap());
+        }
+
+        self.paths_dirty = true;
+    }
+
+    fn set_recently_displayed_lines(&mut self, line_count: usize) {
+        self.recent_linecnt = line_count;
+    }
+
+    fn do_control(&mut self, ctrl: PageControl) {
+        match ctrl {
+            PageControl::CursorDown => {
+                self.cursor_idx += 1;
+            },
+            PageControl::CursorUp => {
+                if self.cursor_idx > 0 {
+                    self.cursor_idx -= 1;
+                }
+            },
+            _ => {},
+        }
+
+        println!("CURSOR CTRL {} len:{}, offs:{} disp:{}", self.cursor_idx, self.len(), self.scroll_offset, self.recent_linecnt);
+
+        if self.cursor_idx >= self.len() {
+            self.cursor_idx = if self.len() > 0 { self.len() - 1 } else { 0 };
+        }
+
+        if self.cursor_idx < (self.scroll_offset + 5) {
+            if self.scroll_offset > 0 {
+                self.scroll_offset -= 1;
+            }
+        } else if (self.cursor_idx + 5) > (self.scroll_offset + self.recent_linecnt) {
+            self.scroll_offset += 1;
+        }
+
+        if self.scroll_offset + self.recent_linecnt > self.len() {
+            self.scroll_offset = self.len() - self.recent_linecnt;
+        }
+
+        println!("END CURSOR CTRL {} len:{}, offs:{} disp:{}", self.cursor_idx, self.len(), self.scroll_offset, self.recent_linecnt);
+    }
+
     fn as_draw_page(&self) -> Table {
         Table {
             title: String::from(self.base.to_string_lossy()),
             row_gap: 2,
-            col_gap: 10,
+            col_gap: 4,
             columns: vec![
                 Column {
                     head: String::from("name"),
@@ -175,10 +256,16 @@ struct Page {
     cache:      Option<Table>,
 }
 
+pub enum FileManagerSide {
+    Left,
+    Right,
+}
+
 pub struct FileManager<'a, 'b> {
     draw_state:     DrawState<'a, 'b>,
     left:           std::vec::Vec<Page>,
     right:          std::vec::Vec<Page>,
+    active_side:    FileManagerSide,
 }
 
 enum PanePos {
@@ -190,20 +277,33 @@ impl<'a, 'b> FileManager<'a, 'b> {
     fn open_path_in(&mut self, path: &std::path::Path, pos: PanePos) {
         let ps = PathSheet::read(path).expect("No broken paths please");
         let r = Rc::new(ps);
-        let pg = Page {
+        let mut pg = Page {
             fm_page: r,
             cache: None,
         };
+        Rc::get_mut(&mut pg.fm_page).unwrap().sort_by_column(0);
         match pos {
             PanePos::LeftTab  => self.left.push(pg),
             PanePos::RightTab => self.right.push(pg),
         }
     }
 
+    fn process_page_control(&mut self, ctrl: PageControl) {
+        match self.active_side {
+            FileManagerSide::Left => {
+                if self.left.is_empty() { return; }
+                Rc::get_mut(&mut self.left.get_mut(0).unwrap().fm_page).unwrap().do_control(ctrl);
+            },
+            FileManagerSide::Right => {
+                if self.right.is_empty() { return; }
+//                Rc::get_mut(self.right.get_mut(0).unwrap().fm_page).unwrap().do_control(ctrl);
+            },
+        };
+    }
+
     fn redraw(&mut self) {
         if !self.left.is_empty() {
-            let sl = self.left.as_mut_slice();
-            let pg = &mut sl[sl.len() - 1];
+            let pg : &mut Page = self.left.get_mut(0).unwrap();
             if pg.cache.is_none() || pg.fm_page.needs_repage() {
                 pg.cache = Some(pg.fm_page.as_draw_page());
             }
@@ -218,10 +318,16 @@ impl<'a, 'b> FileManager<'a, 'b> {
                 Point::new(half_width as i32 + 1, win_size.1 as i32));
 
             if pg.cache.is_some() {
-                self.draw_state.draw_table(
-                    pg.cache.as_mut().unwrap(),
-                    0, 0,
-                    half_width as i32);
+                let disp_row_count =
+                    self.draw_state.draw_table(
+                        pg.cache.as_mut().unwrap(),
+                        2, 0,
+                        half_width as i32 - 2,
+                        pg.fm_page.get_scroll_offs(),
+                        pg.fm_page.get_cursor_idx());
+                Rc::get_mut(&mut pg.fm_page)
+                    .unwrap()
+                    .set_recently_displayed_lines(disp_row_count);
             }
         }
     }
@@ -281,16 +387,18 @@ const NORM_BG2_COLOR : Color = Color { r:  38, g:  38, b:  38, a: 0xff };
 const NORM_BG3_COLOR : Color = Color { r:  51, g:  51, b:  51, a: 0xff };
 const NORM_FG_COLOR  : Color = Color { r: 229, g: 229, b: 229, a: 0xff };
 //const NORM_FG_COLOR  : Color = Color { r: 229, g: 229, b: 0, a: 0xff };
-//const CURS_BG_COLOR  = Color::RGB(144, 238, 144);
-//const CURS_BG_COLOR  = Color::RGB(  0,   0,   0);
-//const HIGH_BG_COLOR  = Color::RGB(255,   0,   0);
-//const HIGH_FG_COLOR  = Color::RGB(  0,   0,   0);
-//const SLCT_BG_COLOR  = Color::RGB(169, 169, 169);
-//const SLCT_FG_COLOR  = Color::RGB(  0,   0,   0);
-const DIVIDER_COLOR : Color = Color { r: 34,  g: 69,  b: 34, a: 0xff };
-//const SCRIND_COLOR   = Color::RGB( 96, 255,  96);
-//const DIR_FG_COLOR   = Color::RGB( 64, 255, 255);
-//const LNK_FG_COLOR   = Color::RGB(255, 128, 255);
+const CURS_BG_COLOR  : Color = Color { r: 144, g: 238, b: 144, a: 0xff };
+const CURS_FG_COLOR  : Color = Color { r:   0, g:   0, b:   0, a: 0xff };
+const HIGH_BG_COLOR  : Color = Color { r: 255, g:   0, b:   0, a: 0xff };
+const HIGH_FG_COLOR  : Color = Color { r:   0, g:   0, b:   0, a: 0xff };
+const SLCT_BG_COLOR  : Color = Color { r: 169, g: 169, b: 169, a: 0xff };
+const SLCT_FG_COLOR  : Color = Color { r:   0, g:   0, b:   0, a: 0xff };
+const SCRIND_COLOR   : Color = Color { r:  96, g: 255, b:  96, a: 0xff };
+const DIR_FG_COLOR   : Color = Color { r:  64, g: 255, b: 255, a: 0xff };
+const LNK_FG_COLOR   : Color = Color { r: 255, g: 128, b: 255, a: 0xff };
+const DIVIDER_COLOR  : Color = Color { r:  34, g:  69, b:  34, a: 0xff };
+
+const MIN_EXPAND_WIDTH : i32 = 50;
 
 struct DrawState<'a, 'b> {
     canvas: sdl2::render::Canvas<sdl2::video::Window>,
@@ -313,8 +421,6 @@ impl<'a, 'b> DrawState<'a, 'b> {
                 if col.calc_size.is_none() {
                     let tsize = self.font.borrow().size_of(&txt);
                     col.calc_size = Some(tsize.unwrap_or((0, 0)).0 as i32);
-                } else {
-                    col.calc_size = Some(0);
                 }
             } else {
                 col.calc_size = Some(0);
@@ -334,7 +440,7 @@ impl<'a, 'b> DrawState<'a, 'b> {
 
         let expand_rest_width = table_width - fixed_width;
 
-        if expand_rest_width < 0 {
+        if expand_rest_width < MIN_EXPAND_WIDTH {
             return self.calc_column_width(table, table_width, skip_cols + 1);
         }
 
@@ -352,19 +458,25 @@ impl<'a, 'b> DrawState<'a, 'b> {
     }
 
     fn draw_table(
-        &mut self, table: &mut Table,
+        &mut self,
+        table: &mut Table,
         x_offs: i32, y_offs: i32,
-        table_width: i32) {
-        println!("FO {}", table_width);
+        table_width: i32,
+        row_offs: usize,
+        cursor_idx: usize) -> usize {
 
         self.calc_column_text_widths(table);
         let cols = self.calc_column_width(table, table_width, 0);
 
+
+        let mut recent_displayed_row_count = 0;
+
         let mut x = x_offs;
         for width_and_col in cols.iter().enumerate().zip(table.columns.iter()) {
-            let row_idx = (width_and_col.0).0;
+            let col_idx = (width_and_col.0).0;
             let width   = (width_and_col.0).1;
             let column  = width_and_col.1;
+            //d// println!("COL {}, w: {}, h: {}", col_idx, width, column.head);
 
             let row_height = self.font.borrow().height() + table.row_gap as i32;
 
@@ -386,25 +498,37 @@ impl<'a, 'b> DrawState<'a, 'b> {
 
             let mut y = y_offs + row_height;
 
-            for (col_idx, row) in column.rows.iter().enumerate() {
-                if col_idx % 2 == 0 {
-                    if row_idx % 2 == 0 {
+            let mut row_count = 0;
+            for (row_idx, row) in column.rows.iter().enumerate().skip(row_offs) {
+                let mut fg_color = NORM_FG_COLOR;
+                row_count += 1;
+
+                if row_idx % 2 == 0 {
+                    if col_idx % 2 == 0 {
                         self.canvas.set_draw_color(NORM_BG_COLOR);
                     } else {
                         self.canvas.set_draw_color(NORM_BG2_COLOR);
                     }
                 } else {
-                    if row_idx % 2 == 0 {
+                    if col_idx % 2 == 0 {
                         self.canvas.set_draw_color(NORM_BG2_COLOR);
                     } else {
                         self.canvas.set_draw_color(NORM_BG3_COLOR);
                     }
                 }
+
+                //d// println!("DRAW ROW {} = cur={}", row_idx, cursor_idx);
+
+                if cursor_idx == row_idx {
+                    self.canvas.set_draw_color(CURS_BG_COLOR);
+                    fg_color = CURS_FG_COLOR;
+                }
+
                 self.canvas.fill_rect(Rect::new(x, y, *width as u32, row_height as u32));
 
                 draw_text(
                     &mut self.font.borrow_mut(),
-                    NORM_FG_COLOR,
+                    fg_color,
                     &mut self.canvas,
                     x,
                     y,
@@ -413,9 +537,13 @@ impl<'a, 'b> DrawState<'a, 'b> {
                 y += row_height;
             }
 
+            recent_displayed_row_count = row_count;
+
             x += width;
-            println!("X= {}", x);
+            //d// println!("X= {}", x);
         }
+
+        recent_displayed_row_count
     }
 }
 
@@ -423,7 +551,7 @@ fn draw_text(font: &mut sdl2::ttf::Font, color: Color, canvas: &mut sdl2::render
     let txt_crt = canvas.texture_creator();
 
     let sf = font.render(txt).blended(color).map_err(|e| e.to_string()).unwrap();
-    let mut txt = txt_crt.create_texture_from_surface(&sf).map_err(|e| e.to_string()).unwrap();
+    let txt = txt_crt.create_texture_from_surface(&sf).map_err(|e| e.to_string()).unwrap();
     let tq = txt.query();
 
     let w : i32 = if max_w < (tq.width as i32) { max_w } else { tq.width as i32 };
@@ -465,64 +593,64 @@ pub fn main() -> Result<(), String> {
             canvas: canvas,
             font: Rc::new(RefCell::new(font)),
         },
+        active_side: FileManagerSide::Left,
         left: Vec::new(),
         right: Vec::new(),
     };
 
+    let pth = std::path::Path::new("/home/weictr");
+    fm.open_path_in(pth, PanePos::LeftTab);
+
+    let mut last_frame = Instant::now();
+    let mut is_first = true;
     'running: loop {
-        let last_frame = Instant::now();
-        let event = event_pump.wait_event();
-        match event {
-            Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                break 'running
-            },
-            Event::Window { win_event: w, timestamp: _, window_id: _ } => {
-                match w {
-                    WindowEvent::Resized(w, h) => {
-                        println!("XHX {},{}", w, h);
-                    },
-                    WindowEvent::SizeChanged(w, h) => {
-                        println!("XHXSC {},{}", w, h);
-                    },
-                    _ => {}
-                }
-            },
-            _ => {}
+        let mut resized = false;
+        let event = event_pump.wait_event_timeout(1000);
+        if let Some(event) = event {
+            match event {
+                Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                    break 'running
+                },
+                Event::KeyDown { keycode: Some(Keycode::H), .. } => {
+                    fm.process_page_control(PageControl::Back);
+                },
+                Event::KeyDown { keycode: Some(Keycode::J), .. } => {
+                    fm.process_page_control(PageControl::CursorDown);
+                },
+                Event::KeyDown { keycode: Some(Keycode::K), .. } => {
+                    fm.process_page_control(PageControl::CursorUp);
+                },
+                Event::KeyDown { keycode: Some(Keycode::L), .. } => {
+                    fm.process_page_control(PageControl::Access);
+                },
+                Event::Window { win_event: w, timestamp: _, window_id: _ } => {
+                    match w {
+                        WindowEvent::Resized(w, h) => {
+                            println!("XHX {},{}", w, h);
+                            resized = true;
+                        },
+                        WindowEvent::SizeChanged(w, h) => {
+                            println!("XHXSC {},{}", w, h);
+                            resized = true;
+                        },
+                        _ => {}
+                    }
+                },
+                _ => {}
+            }
         }
-
-        fm.draw_state.clear();
-
-        let pth = std::path::Path::new(".");
-//        let ps = PathSheet::read(pth).unwrap();
-//        let dp = ps.as_draw_page();
-        println!("WIN WIDTH: {}", fm.draw_state.canvas.window().size().0);
-        fm.open_path_in(pth, PanePos::LeftTab);
-        fm.redraw();
-//        ds.draw_page(&dp);
-
-//        let mut y = 0i32;
-//        for e in fs::read_dir(".").unwrap() {
-//            let pth = e.unwrap().path();
-//            if pth.is_dir() {
-//                draw_text(&mut font, &mut canvas, 0, y, &format!("D {}", pth.file_name().unwrap().to_string_lossy()));
-//            } else if pth.is_file() {
-//                draw_text(&mut font, &mut canvas, 0, y, &format!("f {}", pth.file_name().unwrap().to_string_lossy()));
-//            } else {
-//                draw_text(&mut font, &mut canvas, 0, y, &format!("? {}", pth.file_name().unwrap().to_string_lossy()));
-//            }
-////            let dir = entry?;
-//
-//            y += font.height();
-//        }
-//
-        fm.draw_state.done();
 
         let frame_time = last_frame.elapsed().as_millis();
-        let last_wait_time = 16 - (frame_time as i64);
+        println!("FO {},{},{}", frame_time, is_first, resized);
 
-        if last_wait_time > 0 {
-            ::std::thread::sleep(Duration::from_millis(last_wait_time as u64));
+        if is_first || resized || frame_time >= 16 {
+            fm.draw_state.clear();
+            fm.redraw();
+            fm.draw_state.done();
+            last_frame = Instant::now();
         }
+
+        is_first = false;
     }
 
     Ok(())
