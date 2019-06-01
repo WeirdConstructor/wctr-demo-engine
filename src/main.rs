@@ -4,12 +4,13 @@ use sdl2::event::WindowEvent;
 use sdl2::keyboard::Keycode;
 use sdl2::rect::Rect;
 use sdl2::rect::Point;
+//use sdl2::sys::Point;
 use chrono::offset::Utc;
 use chrono::DateTime;
 //use std::borrow::BorrowMut;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::time::{Instant, Duration};
+use std::time::{Instant};
 use std::fs;
 
 pub enum PathRecordType {
@@ -25,15 +26,25 @@ pub struct PathRecord {
     pub path_type:  PathRecordType,
 }
 
+#[derive(Debug)]
+pub struct RenderFeedback {
+    recent_line_count: usize,
+    row_offset: usize,
+    start_rows: (i32, i32),
+    row_height: i32,
+    end_rows: (i32, i32),
+}
+
 struct PathSheet {
-    pub base:           std::path::PathBuf,
-    pub paths:          std::vec::Vec<PathRecord>,
-    pub paths_dirty:    bool,
-    pub state_dirty:    bool,
-    pub cursor_idx:     usize,
-    pub recent_linecnt: usize,
-    pub scroll_offset:  usize,
-    pub selection:      std::collections::HashSet<usize>,
+    pub base:               std::path::PathBuf,
+    pub paths:              std::vec::Vec<PathRecord>,
+    pub paths_dirty:        bool,
+    pub state_dirty:        bool,
+    pub cursor_idx:         usize,
+    pub scroll_offset:      usize,
+    pub selection:          std::collections::HashSet<usize>,
+    pub highlight:          std::collections::HashSet<usize>,
+    pub render_feedback:    RenderFeedback,
 }
 
 #[derive(Debug)]
@@ -78,8 +89,15 @@ impl PathSheet {
             paths:          sheet_paths,
             cursor_idx:     0,
             scroll_offset:  0,
-            recent_linecnt: 0,
+            render_feedback: RenderFeedback {
+                recent_line_count: 0,
+                row_offset:        0,
+                start_rows:        (0, 0),
+                row_height:        0,
+                end_rows:          (0, 0),
+            },
             selection:      std::collections::HashSet::new(),
+            highlight:      std::collections::HashSet::new(),
             paths_dirty:    false,
             state_dirty:    false,
         })
@@ -123,30 +141,34 @@ pub enum PageControl {
     Access,
     CursorDown,
     CursorUp,
+    Click((i32, i32)),
+    Scroll(i32),
 }
 
 pub trait FmPage {
     fn len(&self) -> usize;
     fn as_draw_page(&self) -> Table;
-    fn get_cursor_idx(&self) -> usize;
     fn get_scroll_offs(&self) -> usize;
     fn do_control(&mut self, ctrl: PageControl);
+    fn is_cursor_idx(&self, idx: usize) -> bool;
     fn is_selected(&self, idx: usize) -> bool;
+    fn is_highlighted(&self, idx: usize) -> bool;
     fn needs_repage(&self) -> bool;
     fn needs_redraw(&self) -> bool;
 
     fn sort_by_column(&mut self, col_idx: usize);
 
-    fn set_recently_displayed_lines(&mut self, line_count: usize);
+    fn set_render_feedback(&mut self, fb: RenderFeedback);
 }
 
 const SCROLL_PADDING : usize = 5;
 
 impl FmPage for PathSheet {
     fn len(&self) -> usize { self.paths.len() }
-    fn get_cursor_idx(&self) -> usize { self.cursor_idx }
     fn get_scroll_offs(&self) -> usize { self.scroll_offset }
+    fn is_cursor_idx(&self, idx: usize) -> bool { self.cursor_idx == idx }
     fn is_selected(&self, idx: usize) -> bool { self.selection.get(&idx).is_some() }
+    fn is_highlighted(&self, idx: usize) -> bool { self.highlight.get(&idx).is_some() }
     fn needs_repage(&self) -> bool { self.paths_dirty }
     fn needs_redraw(&self) -> bool { self.state_dirty }
 
@@ -173,8 +195,8 @@ impl FmPage for PathSheet {
         self.paths_dirty = true;
     }
 
-    fn set_recently_displayed_lines(&mut self, line_count: usize) {
-        self.recent_linecnt = line_count;
+    fn set_render_feedback(&mut self, fb: RenderFeedback) {
+        self.render_feedback = fb;
     }
 
     fn do_control(&mut self, ctrl: PageControl) {
@@ -187,16 +209,56 @@ impl FmPage for PathSheet {
                     self.cursor_idx -= 1;
                 }
             },
+            PageControl::Click((x, y)) => {
+                println!("CLICK {}, {} | {:?}", x, y, self.render_feedback);
+                let x1 = self.render_feedback.start_rows.0;
+                let x2 = self.render_feedback.end_rows.0;
+                let y1 = self.render_feedback.start_rows.1;
+                let y2 = self.render_feedback.end_rows.1;
+
+                if !(x >= x1 && x <= x2 && y >= y1 && y <= y2) {
+                    return;
+                }
+
+                let y = y - y1;
+                let row = y / self.render_feedback.row_height;
+                self.cursor_idx = self.render_feedback.row_offset + row as usize;
+            },
+            PageControl::Scroll(amount) => {
+                println!("SCROLL {}", amount);
+                let amount = amount * SCROLL_PADDING as i32;
+                if amount < 0 && self.scroll_offset < (-amount) as usize {
+                    self.scroll_offset = 0;
+
+                } else if amount < 0 {
+                    self.scroll_offset -= (-amount) as usize;
+
+                } else {
+                    self.scroll_offset += amount as usize;
+                }
+
+                if self.scroll_offset > (self.len() - self.render_feedback.recent_line_count) {
+                    self.scroll_offset = self.len() - self.render_feedback.recent_line_count;
+                }
+
+                return;
+            },
             _ => {},
         }
 
-        println!("CURSOR CTRL {} len:{}, offs:{} disp:{}", self.cursor_idx, self.len(), self.scroll_offset, self.recent_linecnt);
+        println!("CURSOR CTRL {} len:{}, offs:{} disp:{}",
+                 self.cursor_idx,
+                 self.len(),
+                 self.scroll_offset,
+                 self.render_feedback.recent_line_count);
 
         if self.cursor_idx >= self.len() {
             self.cursor_idx = if self.len() > 0 { self.len() - 1 } else { 0 };
         }
 
-        if self.recent_linecnt <= 2 * SCROLL_PADDING {
+        let recent_linecnt = self.render_feedback.recent_line_count;
+
+        if recent_linecnt <= 2 * SCROLL_PADDING {
             if self.cursor_idx > 0 {
                 self.scroll_offset = self.cursor_idx - 1;
             } else {
@@ -204,19 +266,23 @@ impl FmPage for PathSheet {
             }
         } else {
             if self.cursor_idx < (self.scroll_offset + SCROLL_PADDING) {
-                if self.scroll_offset > 0 {
-                    self.scroll_offset -= 1;
+                let diff = (self.scroll_offset + SCROLL_PADDING) - self.cursor_idx;
+                if self.scroll_offset > diff {
+                    self.scroll_offset -= diff;
+                } else {
+                    self.scroll_offset = 0;
                 }
-            } else if (self.cursor_idx + SCROLL_PADDING) > (self.scroll_offset + self.recent_linecnt) {
-                self.scroll_offset += (self.cursor_idx + SCROLL_PADDING) - (self.scroll_offset + self.recent_linecnt);
+
+            } else if (self.cursor_idx + SCROLL_PADDING + 1) > (self.scroll_offset + recent_linecnt) {
+                self.scroll_offset += (self.cursor_idx + SCROLL_PADDING + 1) - (self.scroll_offset + recent_linecnt);
             }
 
-            if (self.scroll_offset + self.recent_linecnt) > self.len() {
-                self.scroll_offset = self.len() - self.recent_linecnt;
+            if (self.scroll_offset + recent_linecnt) > self.len() {
+                self.scroll_offset = self.len() - recent_linecnt;
             }
         }
 
-        println!("END CURSOR CTRL {} len:{}, offs:{} disp:{}", self.cursor_idx, self.len(), self.scroll_offset, self.recent_linecnt);
+        println!("END CURSOR CTRL {} len:{}, offs:{} disp:{}", self.cursor_idx, self.len(), self.scroll_offset, recent_linecnt);
     }
 
     fn as_draw_page(&self) -> Table {
@@ -303,7 +369,8 @@ impl<'a, 'b> FileManager<'a, 'b> {
         match self.active_side {
             FileManagerSide::Left => {
                 if self.left.is_empty() { return; }
-                Rc::get_mut(&mut self.left.get_mut(0).unwrap().fm_page).unwrap().do_control(ctrl);
+                Rc::get_mut(&mut self.left.get_mut(0).unwrap().fm_page).unwrap()
+                    .do_control(ctrl);
             },
             FileManagerSide::Right => {
                 if self.right.is_empty() { return; }
@@ -312,10 +379,21 @@ impl<'a, 'b> FileManager<'a, 'b> {
         };
     }
 
-    fn redraw(&mut self) {
+    fn handle_resize(&mut self) {
         if !self.left.is_empty() {
             let pg : &mut Page = self.left.get_mut(0).unwrap();
             Rc::get_mut(&mut pg.fm_page).unwrap().do_control(PageControl::Refresh);
+        }
+
+        if !self.right.is_empty() {
+            let pg : &mut Page = self.right.get_mut(0).unwrap();
+            Rc::get_mut(&mut pg.fm_page).unwrap().do_control(PageControl::Refresh);
+        }
+    }
+
+    fn redraw(&mut self) {
+        if !self.left.is_empty() {
+            let pg : &mut Page = self.left.get_mut(0).unwrap();
 
             if pg.cache.is_none() || pg.fm_page.needs_repage() {
                 pg.cache = Some(pg.fm_page.as_draw_page());
@@ -330,18 +408,23 @@ impl<'a, 'b> FileManager<'a, 'b> {
                 Point::new(half_width as i32 + 1, 0),
                 Point::new(half_width as i32 + 1, win_size.1 as i32));
 
+            let has_focus : bool =
+                0 <
+                self.draw_state.canvas.window().window_flags()
+                & (  (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_INPUT_FOCUS as u32)
+                   | (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_MOUSE_FOCUS as u32));
+
             if pg.cache.is_some() {
-                let disp_row_count =
+                let render_feedback =
                     self.draw_state.draw_table(
-                        pg.cache.as_mut().unwrap(),
+                        pg,
                         2, 0,
                         half_width as i32 - 2,
                         win_size.1 as i32,
-                        pg.fm_page.get_scroll_offs(),
-                        pg.fm_page.get_cursor_idx());
+                        has_focus);
                 Rc::get_mut(&mut pg.fm_page)
                     .unwrap()
-                    .set_recently_displayed_lines(disp_row_count);
+                    .set_render_feedback(render_feedback);
             }
         }
     }
@@ -473,12 +556,14 @@ impl<'a, 'b> DrawState<'a, 'b> {
 
     fn draw_table(
         &mut self,
-        table: &mut Table,
-        x_offs: i32, y_offs: i32,
+        pg: &mut Page,
+        x_offs: i32,
+        y_offs: i32,
         table_width: i32,
         table_height: i32,
-        row_offs: usize,
-        cursor_idx: usize) -> usize {
+        has_focus: bool) -> RenderFeedback {
+
+        let table = pg.cache.as_mut().unwrap();
 
         self.calc_column_text_widths(table);
         let cols = self.calc_column_width(table, table_width, 0);
@@ -510,7 +595,10 @@ impl<'a, 'b> DrawState<'a, 'b> {
 
             let mut y = y_offs + row_height;
 
-            for (row_idx, row) in column.rows.iter().enumerate().skip(row_offs) {
+            for (row_idx, row) in column.rows.iter()
+                                    .enumerate()
+                                    .skip(pg.fm_page.get_scroll_offs()) {
+
                 if (y - y_offs) + row_height > table_height {
                     break;
                 }
@@ -531,11 +619,13 @@ impl<'a, 'b> DrawState<'a, 'b> {
                     }
                 }
 
-                //d// println!("DRAW ROW {} = cur={}", row_idx, cursor_idx);
-
-                if cursor_idx == row_idx {
+                if has_focus && pg.fm_page.is_cursor_idx(row_idx) {
                     self.canvas.set_draw_color(CURS_BG_COLOR);
                     fg_color = CURS_FG_COLOR;
+
+                } else if pg.fm_page.is_selected(row_idx) {
+                    self.canvas.set_draw_color(SLCT_BG_COLOR);
+                    fg_color = SLCT_BG_COLOR;
                 }
 
                 self.canvas.fill_rect(Rect::new(x, y, *width as u32, row_height as u32));
@@ -555,8 +645,17 @@ impl<'a, 'b> DrawState<'a, 'b> {
             //d// println!("X= {}", x);
         }
 
-        // substract 1 row_height for title bar
-        ((table_height - row_height) / row_height) as usize
+        let line_count = ((table_height - row_height) / row_height) as i32;
+        RenderFeedback {
+            // substract 1 row_height for title bar
+            recent_line_count: line_count as usize,
+            row_offset: pg.fm_page.get_scroll_offs(),
+            start_rows: (x_offs,
+                         y_offs + row_height),
+            row_height,
+            end_rows:   (x_offs + table_width,
+                         y_offs + row_height + line_count as i32 * row_height),
+        }
     }
 }
 
@@ -617,7 +716,7 @@ pub fn main() -> Result<(), String> {
     let mut last_frame = Instant::now();
     let mut is_first = true;
     'running: loop {
-        let mut resized = false;
+        let mut force_redraw = false;
         let event = event_pump.wait_event_timeout(1000);
         if let Some(event) = event {
             match event {
@@ -636,15 +735,39 @@ pub fn main() -> Result<(), String> {
                 Event::KeyDown { keycode: Some(Keycode::L), .. } => {
                     fm.process_page_control(PageControl::Access);
                 },
+                Event::MouseButtonDown { x: x, y: y, .. } => {
+                    fm.process_page_control(PageControl::Click((x, y)));
+                },
+                Event::MouseWheel { y: y, direction: dir, .. } => {
+                    match dir {
+                        sdl2::mouse::MouseWheelDirection::Normal => {
+                            fm.process_page_control(PageControl::Scroll(-y));
+                            println!("DIR NORMAL");
+                        },
+                        sdl2::mouse::MouseWheelDirection::Flipped => {
+                            fm.process_page_control(PageControl::Scroll(y));
+                            println!("DIR FLOP");
+                        },
+                        _ => {}
+                    }
+                },
                 Event::Window { win_event: w, timestamp: _, window_id: _ } => {
                     match w {
                         WindowEvent::Resized(w, h) => {
                             println!("XHX {},{}", w, h);
-                            resized = true;
+                            fm.handle_resize();
+                            force_redraw = true;
                         },
                         WindowEvent::SizeChanged(w, h) => {
                             println!("XHXSC {},{}", w, h);
-                            resized = true;
+                            fm.handle_resize();
+                            force_redraw = true;
+                        },
+                        WindowEvent::FocusGained => {
+                            force_redraw = true;
+                        },
+                        WindowEvent::FocusLost => {
+                            force_redraw = true;
                         },
                         _ => {}
                     }
@@ -654,9 +777,9 @@ pub fn main() -> Result<(), String> {
         }
 
         let frame_time = last_frame.elapsed().as_millis();
-        println!("FO {},{},{}", frame_time, is_first, resized);
+        println!("FO {},{},{}", frame_time, is_first, force_redraw);
 
-        if is_first || resized || frame_time >= 16 {
+        if is_first || force_redraw || frame_time >= 16 {
             fm.draw_state.clear();
             fm.redraw();
             fm.draw_state.done();
