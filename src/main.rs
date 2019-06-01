@@ -118,6 +118,7 @@ pub struct Table {
 }
 
 pub enum PageControl {
+    Refresh,
     Back,
     Access,
     CursorDown,
@@ -138,6 +139,8 @@ pub trait FmPage {
 
     fn set_recently_displayed_lines(&mut self, line_count: usize);
 }
+
+const SCROLL_PADDING : usize = 5;
 
 impl FmPage for PathSheet {
     fn len(&self) -> usize { self.paths.len() }
@@ -193,16 +196,24 @@ impl FmPage for PathSheet {
             self.cursor_idx = if self.len() > 0 { self.len() - 1 } else { 0 };
         }
 
-        if self.cursor_idx < (self.scroll_offset + 5) {
-            if self.scroll_offset > 0 {
-                self.scroll_offset -= 1;
+        if self.recent_linecnt <= 2 * SCROLL_PADDING {
+            if self.cursor_idx > 0 {
+                self.scroll_offset = self.cursor_idx - 1;
+            } else {
+                self.scroll_offset = self.cursor_idx;
             }
-        } else if (self.cursor_idx + 5) > (self.scroll_offset + self.recent_linecnt) {
-            self.scroll_offset += 1;
-        }
+        } else {
+            if self.cursor_idx < (self.scroll_offset + SCROLL_PADDING) {
+                if self.scroll_offset > 0 {
+                    self.scroll_offset -= 1;
+                }
+            } else if (self.cursor_idx + SCROLL_PADDING) > (self.scroll_offset + self.recent_linecnt) {
+                self.scroll_offset += (self.cursor_idx + SCROLL_PADDING) - (self.scroll_offset + self.recent_linecnt);
+            }
 
-        if self.scroll_offset + self.recent_linecnt > self.len() {
-            self.scroll_offset = self.len() - self.recent_linecnt;
+            if (self.scroll_offset + self.recent_linecnt) > self.len() {
+                self.scroll_offset = self.len() - self.recent_linecnt;
+            }
         }
 
         println!("END CURSOR CTRL {} len:{}, offs:{} disp:{}", self.cursor_idx, self.len(), self.scroll_offset, self.recent_linecnt);
@@ -304,6 +315,8 @@ impl<'a, 'b> FileManager<'a, 'b> {
     fn redraw(&mut self) {
         if !self.left.is_empty() {
             let pg : &mut Page = self.left.get_mut(0).unwrap();
+            Rc::get_mut(&mut pg.fm_page).unwrap().do_control(PageControl::Refresh);
+
             if pg.cache.is_none() || pg.fm_page.needs_repage() {
                 pg.cache = Some(pg.fm_page.as_draw_page());
             }
@@ -323,6 +336,7 @@ impl<'a, 'b> FileManager<'a, 'b> {
                         pg.cache.as_mut().unwrap(),
                         2, 0,
                         half_width as i32 - 2,
+                        win_size.1 as i32,
                         pg.fm_page.get_scroll_offs(),
                         pg.fm_page.get_cursor_idx());
                 Rc::get_mut(&mut pg.fm_page)
@@ -462,14 +476,14 @@ impl<'a, 'b> DrawState<'a, 'b> {
         table: &mut Table,
         x_offs: i32, y_offs: i32,
         table_width: i32,
+        table_height: i32,
         row_offs: usize,
         cursor_idx: usize) -> usize {
 
         self.calc_column_text_widths(table);
         let cols = self.calc_column_width(table, table_width, 0);
 
-
-        let mut recent_displayed_row_count = 0;
+        let row_height = self.font.borrow().height() + table.row_gap as i32;
 
         let mut x = x_offs;
         for width_and_col in cols.iter().enumerate().zip(table.columns.iter()) {
@@ -477,8 +491,6 @@ impl<'a, 'b> DrawState<'a, 'b> {
             let width   = (width_and_col.0).1;
             let column  = width_and_col.1;
             //d// println!("COL {}, w: {}, h: {}", col_idx, width, column.head);
-
-            let row_height = self.font.borrow().height() + table.row_gap as i32;
 
             self.canvas.set_draw_color(NORM_BG_COLOR);
             self.canvas.fill_rect(Rect::new(x, y_offs, *width as u32, row_height as u32));
@@ -498,10 +510,12 @@ impl<'a, 'b> DrawState<'a, 'b> {
 
             let mut y = y_offs + row_height;
 
-            let mut row_count = 0;
             for (row_idx, row) in column.rows.iter().enumerate().skip(row_offs) {
+                if (y - y_offs) + row_height > table_height {
+                    break;
+                }
+
                 let mut fg_color = NORM_FG_COLOR;
-                row_count += 1;
 
                 if row_idx % 2 == 0 {
                     if col_idx % 2 == 0 {
@@ -537,13 +551,12 @@ impl<'a, 'b> DrawState<'a, 'b> {
                 y += row_height;
             }
 
-            recent_displayed_row_count = row_count;
-
             x += width;
             //d// println!("X= {}", x);
         }
 
-        recent_displayed_row_count
+        // substract 1 row_height for title bar
+        ((table_height - row_height) / row_height) as usize
     }
 }
 
