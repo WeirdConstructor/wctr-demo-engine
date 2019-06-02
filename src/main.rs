@@ -178,13 +178,25 @@ impl FmPage for PathSheet {
                 let s1 = String::from(
                     a.path.file_name()
                     .unwrap_or(std::ffi::OsStr::new(""))
-                    .to_string_lossy());
+                    .to_string_lossy()).to_lowercase();
                 let s2 = String::from(
                     b.path.file_name()
                     .unwrap_or(std::ffi::OsStr::new(""))
-                    .to_string_lossy());
+                    .to_string_lossy()).to_lowercase();
 
-                s1.partial_cmp(&s2).unwrap()
+                if let PathRecordType::Dir = a.path_type {
+                    if let PathRecordType::Dir = b.path_type {
+                        s1.partial_cmp(&s2).unwrap()
+                    } else {
+                        std::cmp::Ordering::Less
+                    }
+                } else {
+                    if let PathRecordType::Dir = b.path_type {
+                        std::cmp::Ordering::Greater
+                    } else {
+                        s1.partial_cmp(&s2).unwrap()
+                    }
+                }
             });
         } else if col_idx == 1 {
             self.paths.sort_by(|a, b| a.mtime.partial_cmp(&b.mtime).unwrap());
