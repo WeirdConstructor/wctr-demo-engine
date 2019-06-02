@@ -29,10 +29,10 @@ pub struct PathRecord {
 #[derive(Debug)]
 pub struct RenderFeedback {
     recent_line_count: usize,
-    row_offset: usize,
-    start_rows: (i32, i32),
-    row_height: i32,
-    end_rows: (i32, i32),
+    row_offset:        usize,
+    start_rows:        (i32, i32),
+    row_height:        i32,
+    end_rows:          (i32, i32),
 }
 
 struct PathSheet {
@@ -237,8 +237,12 @@ impl FmPage for PathSheet {
                     self.scroll_offset += amount as usize;
                 }
 
-                if self.scroll_offset > (self.len() - self.render_feedback.recent_line_count) {
-                    self.scroll_offset = self.len() - self.render_feedback.recent_line_count;
+                if self.len() <= self.render_feedback.recent_line_count {
+                    self.scroll_offset = 0;
+                } else {
+                    if self.scroll_offset > (self.len() - self.render_feedback.recent_line_count) {
+                        self.scroll_offset = self.len() - self.render_feedback.recent_line_count;
+                    }
                 }
 
                 return;
@@ -278,7 +282,11 @@ impl FmPage for PathSheet {
             }
 
             if (self.scroll_offset + recent_linecnt) > self.len() {
-                self.scroll_offset = self.len() - recent_linecnt;
+                if self.len() < recent_linecnt {
+                    self.scroll_offset = 0;
+                } else {
+                    self.scroll_offset = self.len() - recent_linecnt;
+                }
             }
         }
 
@@ -710,7 +718,7 @@ pub fn main() -> Result<(), String> {
         right: Vec::new(),
     };
 
-    let pth = std::path::Path::new("/home/weictr");
+    let pth = std::path::Path::new(".");
     fm.open_path_in(pth, PanePos::LeftTab);
 
     let mut last_frame = Instant::now();
