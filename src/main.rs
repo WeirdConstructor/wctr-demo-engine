@@ -104,16 +104,16 @@ impl PathSheet {
     }
 }
 
-pub enum DrawLineAttr {
+pub enum Style {
+    Default,
     Dir,
     File,
     Special,
 }
 
-pub struct DrawLine {
-    text:           String,
-    time:           std::time::SystemTime,
-    attr:           DrawLineAttr,
+pub struct StyleString {
+    pub text: String,
+    pub style: Style,
 }
 
 enum ColumnSizing {
@@ -123,7 +123,7 @@ enum ColumnSizing {
 
 pub struct Column {
     head:          String,
-    rows:          std::vec::Vec<String>,
+    rows:          std::vec::Vec<StyleString>,
     size:          ColumnSizing,
     calc_size:     Option<i32>,
 }
@@ -304,14 +304,21 @@ impl FmPage for PathSheet {
                     size: ColumnSizing::ExpandFract(1),
                     calc_size: None,
                     rows: self.paths.iter().map(|p| {
+                        let mut path_postfix = String::from("");
+                        if let PathRecordType::Dir = p.path_type {
+                            path_postfix = std::path::MAIN_SEPARATOR.to_string();
+                        };
 
-                // Theme draus machen:
-//                    attr: match p.path_type {
-//                        PathRecordType::File    => DrawLineAttr::File,
-//                        PathRecordType::Dir     => DrawLineAttr::Dir,
-//                        PathRecordType::SymLink => DrawLineAttr::Special,
-//                    }
-                        String::from(p.path.file_name().unwrap_or(std::ffi::OsStr::new("")).to_string_lossy())
+                        StyleString {
+                            text: String::from(p.path.file_name()
+                                                .unwrap_or(std::ffi::OsStr::new(""))
+                                                .to_string_lossy()) + &path_postfix,
+                            style: match p.path_type {
+                                PathRecordType::File    => Style::File,
+                                PathRecordType::Dir     => Style::Dir,
+                                PathRecordType::SymLink => Style::Special,
+                            }
+                        }
                     }).collect(),
                 },
                 Column {
@@ -320,7 +327,7 @@ impl FmPage for PathSheet {
                     calc_size: None,
                     rows: self.paths.iter().map(|p| {
                         let dt : DateTime<Utc> = p.mtime.into();
-                        format!("{}", dt.format("%Y-%m-%d %H:%M:%S"))
+                        StyleString { text: format!("{}", dt.format("%Y-%m-%d %H:%M:%S")), style: Style::Default }
                     }).collect(),
                 },
                 Column {
@@ -328,7 +335,7 @@ impl FmPage for PathSheet {
                     size: ColumnSizing::TextWidth(String::from("MMMMMM")),
                     calc_size: None,
                     rows: self.paths.iter().map(|_p| {
-                        String::from("{???}")
+                        StyleString { text: String::from("{???}"), style: Style::Default }
                     }).collect(),
                 },
             ],
@@ -611,7 +618,11 @@ impl<'a, 'b> DrawState<'a, 'b> {
                     break;
                 }
 
-                let mut fg_color = NORM_FG_COLOR;
+                let mut fg_color = match row.style {
+                    Style::Dir     => DIR_FG_COLOR,
+                    Style::Special => LNK_FG_COLOR,
+                    _              => NORM_FG_COLOR,
+                };
 
                 if row_idx % 2 == 0 {
                     if col_idx % 2 == 0 {
@@ -645,7 +656,7 @@ impl<'a, 'b> DrawState<'a, 'b> {
                     x,
                     y,
                     *width - table.col_gap as i32,
-                    &row);
+                    &row.text);
                 y += row_height;
             }
 
