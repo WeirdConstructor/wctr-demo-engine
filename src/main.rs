@@ -224,6 +224,52 @@ impl<'a, 'b> DrawState<'a, 'b> {
             }).collect()
     }
 
+    fn draw_table_row(&mut self, row: &StyleString,
+                      col_idx: i32,
+                      row_idx: usize,
+                      has_focus: bool,
+                      fm_page: &Rc<dyn FmPage>,
+                      x: i32,
+                      y: i32,
+                      width: i32,
+                      col_gap: i32,
+                      row_height: i32) {
+
+        let mut fg_color = match row.style {
+            Style::Dir     => DIR_FG_COLOR,
+            Style::Special => LNK_FG_COLOR,
+            _              => NORM_FG_COLOR,
+        };
+
+        let mut bg_color = if row_idx % 2 == 0 {
+            if col_idx % 2 == 0 { NORM_BG_COLOR } else { NORM_BG2_COLOR }
+        } else {
+            if col_idx % 2 == 0 { NORM_BG2_COLOR } else { NORM_BG3_COLOR }
+        };
+
+        if has_focus && fm_page.is_cursor_idx(row_idx) {
+            bg_color = CURS_BG_COLOR;
+            fg_color = CURS_FG_COLOR;
+
+        } else if fm_page.is_selected(row_idx) {
+            bg_color = SLCT_BG_COLOR;
+            fg_color = SLCT_FG_COLOR;
+
+        } else if fm_page.is_highlighted(row_idx) {
+            bg_color = HIGH_FG_COLOR;
+            fg_color = HIGH_FG_COLOR;
+        }
+
+        self.canvas.set_draw_color(bg_color);
+        self.canvas.fill_rect(Rect::new(x, y, width as u32, row_height as u32));
+        draw_bg_text(
+            &mut self.canvas,
+            &mut self.font.borrow_mut(),
+            fg_color, bg_color,
+            x, y, width - col_gap, row_height,
+            &row.text);
+    }
+
     fn draw_table(
         &mut self,
         pg: &mut Page,
@@ -240,6 +286,14 @@ impl<'a, 'b> DrawState<'a, 'b> {
 
         let row_height = self.font.borrow().height() + table.row_gap as i32;
 
+        draw_bg_text(
+            &mut self.canvas, &mut self.font.borrow_mut(),
+            NORM_FG_COLOR, NORM_BG_COLOR,
+            x_offs, y_offs, table_width, row_height,
+            &table.title);
+
+        let y_offs = y_offs + row_height;
+
         let mut x = x_offs;
         for width_and_col in cols.iter().enumerate().zip(table.columns.iter()) {
             let col_idx = (width_and_col.0).0;
@@ -247,15 +301,10 @@ impl<'a, 'b> DrawState<'a, 'b> {
             let column  = width_and_col.1;
             //d// println!("COL {}, w: {}, h: {}", col_idx, width, column.head);
 
-            self.canvas.set_draw_color(NORM_BG_COLOR);
-            self.canvas.fill_rect(Rect::new(x, y_offs, *width as u32, row_height as u32));
-            draw_text(
-                &mut self.font.borrow_mut(),
-                NORM_FG_COLOR,
-                &mut self.canvas,
-                x,
-                y_offs,
-                *width - table.col_gap as i32,
+            draw_bg_text(
+                &mut self.canvas, &mut self.font.borrow_mut(),
+                NORM_FG_COLOR, NORM_BG_COLOR,
+                x, y_offs, *width - table.col_gap as i32, row_height,
                 &column.head);
 
             self.canvas.set_draw_color(NORM_FG_COLOR);
@@ -273,45 +322,12 @@ impl<'a, 'b> DrawState<'a, 'b> {
                     break;
                 }
 
-                let mut fg_color = match row.style {
-                    Style::Dir     => DIR_FG_COLOR,
-                    Style::Special => LNK_FG_COLOR,
-                    _              => NORM_FG_COLOR,
-                };
+                self.draw_table_row(
+                    row, col_idx as i32, row_idx, has_focus,
+                    &pg.fm_page,
+                    x, y,
+                    *width, table.col_gap as i32, row_height);
 
-                if row_idx % 2 == 0 {
-                    if col_idx % 2 == 0 {
-                        self.canvas.set_draw_color(NORM_BG_COLOR);
-                    } else {
-                        self.canvas.set_draw_color(NORM_BG2_COLOR);
-                    }
-                } else {
-                    if col_idx % 2 == 0 {
-                        self.canvas.set_draw_color(NORM_BG2_COLOR);
-                    } else {
-                        self.canvas.set_draw_color(NORM_BG3_COLOR);
-                    }
-                }
-
-                if has_focus && pg.fm_page.is_cursor_idx(row_idx) {
-                    self.canvas.set_draw_color(CURS_BG_COLOR);
-                    fg_color = CURS_FG_COLOR;
-
-                } else if pg.fm_page.is_selected(row_idx) {
-                    self.canvas.set_draw_color(SLCT_BG_COLOR);
-                    fg_color = SLCT_BG_COLOR;
-                }
-
-                self.canvas.fill_rect(Rect::new(x, y, *width as u32, row_height as u32));
-
-                draw_text(
-                    &mut self.font.borrow_mut(),
-                    fg_color,
-                    &mut self.canvas,
-                    x,
-                    y,
-                    *width - table.col_gap as i32,
-                    &row.text);
                 y += row_height;
             }
 
@@ -348,6 +364,21 @@ fn draw_text(font: &mut sdl2::ttf::Font, color: Color, canvas: &mut sdl2::render
         Some(Rect::new(0, 0, w as u32, tq.height)),
         Some(Rect::new(x, y, w as u32, tq.height))
     ).map_err(|e| e.to_string()).unwrap();
+}
+
+fn draw_bg_text(canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
+                font: &mut sdl2::ttf::Font,
+                color: Color,
+                bg_color: Color,
+                x: i32,
+                y: i32,
+                max_w: i32,
+                h: i32,
+                txt: &str) {
+
+    canvas.set_draw_color(bg_color);
+    canvas.fill_rect(Rect::new(x, y, max_w as u32, h as u32));
+    draw_text(font, color, canvas, x, y, max_w, txt);
 }
 
 pub fn main() -> Result<(), String> {
