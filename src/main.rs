@@ -11,6 +11,7 @@ use std::time::{Instant};
 mod defs;
 mod fm_page;
 mod path_sheet;
+mod text_line;
 
 use path_sheet::*;
 use fm_page::*;
@@ -442,6 +443,9 @@ pub fn main() -> Result<(), String> {
                 },
                 Event::MouseButtonDown { x: x, y: y, .. } => {
                     fm.process_page_control(PageControl::Click((x, y)));
+                },
+                Event::TextInput { text: text, .. } => {
+                    println!("TEXT: {}", text);
                 },
                 Event::MouseWheel { y: y, direction: dir, .. } => {
                     match dir {
