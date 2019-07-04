@@ -47,7 +47,6 @@ impl<'a, 'b> FileManager<'a, 'b> {
             fm_page: r,
             cache: None,
         };
-        Rc::get_mut(&mut pg.fm_page).unwrap().sort_by_column(0);
         match pos {
             PanePos::LeftTab  => self.left.push(pg),
             PanePos::RightTab => self.right.push(pg),
@@ -440,6 +439,18 @@ pub fn main() -> Result<(), String> {
                 },
                 Event::KeyDown { keycode: Some(Keycode::L), .. } => {
                     fm.process_page_control(PageControl::Access);
+                },
+                Event::KeyDown { keycode: Some(Keycode::U), .. } => {
+                    fm.process_page_control(PageControl::Update);
+                },
+                Event::KeyDown { keycode: Some(Keycode::S), .. } => {
+                    fm.process_page_control(PageControl::ToggleSortBy(SortColumn::Name));
+                },
+                Event::KeyDown { keycode: Some(Keycode::X), .. } => {
+                    fm.process_page_control(PageControl::ToggleSortBy(SortColumn::MTime));
+                },
+                Event::KeyDown { keycode: Some(Keycode::Y), .. } => {
+                    fm.process_page_control(PageControl::ToggleSortBy(SortColumn::Size));
                 },
                 Event::MouseButtonDown { x: x, y: y, .. } => {
                     fm.process_page_control(PageControl::Click((x, y)));

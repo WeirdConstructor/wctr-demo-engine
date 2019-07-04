@@ -36,6 +36,13 @@ pub struct Table {
 }
 
 #[derive(Debug)]
+pub enum SortColumn {
+    Name,
+    MTime,
+    Size,
+}
+
+#[derive(Debug)]
 pub enum PageControl {
     Refresh,
     Back,
@@ -44,6 +51,8 @@ pub enum PageControl {
     CursorUp,
     Click((i32, i32)),
     Scroll(i32),
+    ToggleSortBy(SortColumn),
+    Update,
 }
 
 #[derive(Debug)]
@@ -65,8 +74,6 @@ pub trait FmPage {
     fn is_highlighted(&self, idx: usize) -> bool;
     fn needs_repage(&self) -> bool;
     fn needs_redraw(&self) -> bool;
-
-    fn sort_by_column(&mut self, col_idx: usize);
 
     fn set_render_feedback(&mut self, fb: RenderFeedback);
 }

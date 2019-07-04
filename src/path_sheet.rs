@@ -14,18 +14,26 @@ impl std::convert::From<std::io::Error> for FMError {
     }
 }
 
-
+#[derive(Debug, PartialEq, Clone)]
 pub enum PathRecordType {
     File,
     Dir,
     SymLink,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct PathRecord {
     pub path:       std::path::PathBuf,
     pub size:       u64,
     pub mtime:      std::time::SystemTime,
     pub path_type:  PathRecordType,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct IndexRefs {
+    cursor: PathRecord,
+    selection: Vec<PathRecord>,
+    highlight: Vec<PathRecord>,
 }
 
 pub struct PathSheet {
@@ -35,6 +43,8 @@ pub struct PathSheet {
     pub state_dirty:        bool,
     pub cursor_idx:         usize,
     pub scroll_offset:      usize,
+    pub sort_col_idx:       usize,
+    pub sort_col_dir:       bool,
     pub selection:          std::collections::HashSet<usize>,
     pub highlight:          std::collections::HashSet<usize>,
     pub render_feedback:    RenderFeedback,
@@ -42,37 +52,92 @@ pub struct PathSheet {
 
 const SCROLL_PADDING : usize = 5;
 
+fn read_path_records(path: &std::path::Path) -> Result<Vec<PathRecord>, FMError>
+{
+    let mut sheet_paths = Vec::new();
+
+    for e in fs::read_dir(path)? {
+        let entry = e?;
+        let path  = entry.path();
+        let md    = path.symlink_metadata()?;
+        let ft    = md.file_type();
+
+        let pr = PathRecord {
+            path,
+            size:  md.len(),
+            mtime: md.modified()?,
+            path_type: if ft.is_symlink() {
+                PathRecordType::SymLink
+            } else if ft.is_dir() {
+                PathRecordType::Dir
+            } else {
+                PathRecordType::File
+            },
+        };
+
+        sheet_paths.push(pr);
+    }
+
+    Ok(sheet_paths)
+}
+
 impl PathSheet {
-    pub fn read(path: &std::path::Path) -> Result<PathSheet, FMError> {
-        let mut sheet_paths = Vec::new();
-
-        for e in fs::read_dir(path)? {
-            let entry = e?;
-            let path  = entry.path();
-            let md    = path.symlink_metadata()?;
-            let ft    = md.file_type();
-
-            let pr = PathRecord {
-                path,
-                size:  md.len(),
-                mtime: md.modified()?,
-                path_type: if ft.is_symlink() {
-                    PathRecordType::SymLink
-                } else if ft.is_dir() {
-                    PathRecordType::Dir
-                } else {
-                    PathRecordType::File
-                },
-            };
-
-            sheet_paths.push(pr);
+    pub fn get_index_refs(&self) -> IndexRefs {
+        IndexRefs {
+            cursor:
+                self.paths[self.cursor_idx].clone(),
+            selection:
+                self.selection.iter().map(|i| self.paths[*i].clone()).collect(),
+            highlight:
+                self.highlight.iter().map(|i| self.paths[*i].clone()).collect(),
         }
+    }
 
-        Ok(PathSheet {
+    pub fn select_index_refs(&mut self, idx_refs: &IndexRefs)
+    {
+        let new_cursor_record =
+            self.paths.iter()
+                .enumerate()
+                .find(|(_, pr)| pr.path == idx_refs.cursor.path);
+        match new_cursor_record {
+            Some((i, _)) => self.cursor_idx = i,
+            None         => self.cursor_idx = 0,
+        }
+    }
+
+    pub fn update(&mut self) -> Result<(), FMError> {
+        let old_refs = self.get_index_refs();
+        std::mem::replace(&mut self.paths, read_path_records(&self.base)?);
+
+//        for (idx, pr) in old_paths.iter().enumerate() {
+//            if pr.path == cursor_record.path {
+//                self.cursor_idx = idx;
+//                break;
+//            }
+//        }
+//        let selected_records    : Vec<PathRecord> =
+//            self.selection.iter().map(|i| old_paths[*i]).collect();
+//        let highlighted_records : Vec<PathRecord> =
+//            self.highlight.iter().map(|i| old_paths[*i]).collect();
+
+        self.paths_dirty = true;
+        self.state_dirty = true;
+
+        self.sort_by_column(self.sort_col_idx, self.sort_col_dir);
+
+        self.select_index_refs(&old_refs);
+
+        Ok(())
+    }
+
+    pub fn read(path: &std::path::Path) -> Result<PathSheet, FMError> {
+        let mut ps = PathSheet {
             base:           path.to_path_buf(),
-            paths:          sheet_paths,
+            paths:          read_path_records(path)?,
             cursor_idx:     0,
             scroll_offset:  0,
+            sort_col_idx:   0,
+            sort_col_dir:   true,
             render_feedback: RenderFeedback {
                 recent_line_count: 0,
                 row_offset:        0,
@@ -84,20 +149,27 @@ impl PathSheet {
             highlight:      std::collections::HashSet::new(),
             paths_dirty:    false,
             state_dirty:    false,
-        })
+        };
+
+        ps.sort_by_column(0, true);
+
+        Ok(ps)
     }
-}
 
-impl FmPage for PathSheet {
-    fn len(&self) -> usize { self.paths.len() }
-    fn get_scroll_offs(&self) -> usize { self.scroll_offset }
-    fn is_cursor_idx(&self, idx: usize) -> bool { self.cursor_idx == idx }
-    fn is_selected(&self, idx: usize) -> bool { self.selection.get(&idx).is_some() }
-    fn is_highlighted(&self, idx: usize) -> bool { self.highlight.get(&idx).is_some() }
-    fn needs_repage(&self) -> bool { self.paths_dirty }
-    fn needs_redraw(&self) -> bool { self.state_dirty }
+    fn toggle_sort_by_column(&mut self, col_idx: usize) {
+        if self.sort_col_idx == col_idx {
+            self.sort_col_dir = !self.sort_col_dir;
+        } else {
+            self.sort_col_idx = col_idx;
+            self.sort_col_dir = true;
+        }
 
-    fn sort_by_column(&mut self, col_idx: usize) {
+        self.sort_by_column(col_idx, self.sort_col_dir);
+    }
+
+    fn sort_by_column(&mut self, col_idx: usize, ascending: bool) {
+        let old_refs = self.get_index_refs();
+
         if col_idx == 0 {
             self.paths.sort_by(|a, b| {
                 let s1 = String::from(
@@ -129,8 +201,24 @@ impl FmPage for PathSheet {
             self.paths.sort_by(|a, b| a.size.partial_cmp(&b.size).unwrap());
         }
 
+        if !ascending {
+            self.paths = self.paths.iter().map(|pr| pr.clone()).rev().collect();
+        }
+
+        self.select_index_refs(&old_refs);
+
         self.paths_dirty = true;
     }
+}
+
+impl FmPage for PathSheet {
+    fn len(&self) -> usize { self.paths.len() }
+    fn get_scroll_offs(&self) -> usize { self.scroll_offset }
+    fn is_cursor_idx(&self, idx: usize) -> bool { self.cursor_idx == idx }
+    fn is_selected(&self, idx: usize) -> bool { self.selection.get(&idx).is_some() }
+    fn is_highlighted(&self, idx: usize) -> bool { self.highlight.get(&idx).is_some() }
+    fn needs_repage(&self) -> bool { self.paths_dirty }
+    fn needs_redraw(&self) -> bool { self.state_dirty }
 
     fn set_render_feedback(&mut self, fb: RenderFeedback) {
         self.render_feedback = fb;
@@ -138,6 +226,16 @@ impl FmPage for PathSheet {
 
     fn do_control(&mut self, ctrl: PageControl) {
         match ctrl {
+            PageControl::ToggleSortBy(col) => {
+                match col {
+                    SortColumn::Name  => self.toggle_sort_by_column(0),
+                    SortColumn::MTime => self.toggle_sort_by_column(1),
+                    SortColumn::Size  => self.toggle_sort_by_column(2),
+                }
+            },
+            PageControl::Update => {
+                self.update().expect("Reading paths on update should work");
+            },
             PageControl::CursorDown => {
                 self.cursor_idx += 1;
             },
@@ -271,8 +369,8 @@ impl FmPage for PathSheet {
                     head: String::from("size"),
                     size: ColumnSizing::TextWidth(String::from("MMMMMM")),
                     calc_size: None,
-                    rows: self.paths.iter().map(|_p| {
-                        StyleString { text: String::from("{???}"), style: Style::Default }
+                    rows: self.paths.iter().map(|p| {
+                        StyleString { text: format!("{}", p.size), style: Style::Default }
                     }).collect(),
                 },
             ],
