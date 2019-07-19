@@ -1,9 +1,12 @@
-use sdl2::pixels::Color;
-use sdl2::event::Event;
-//use sdl2::event::WindowEvent;
-use sdl2::keyboard::Keycode;
-use sdl2::rect::Rect;
+//use sdl2::pixels::Color;
+//use sdl2::event::Event;
+////use sdl2::event::WindowEvent;
+//use sdl2::keyboard::Keycode;
+//use sdl2::rect::Rect;
 //use sdl2::rect::Point;
+extern crate piston_window;
+use piston_window::*;
+
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::time::{Instant};
@@ -393,18 +396,6 @@ pub fn main() -> Result<(), String> {
     use wlambda::prelude::create_wlamba_prelude;
     use wlambda::vval::{Env};
 
-
-    let sdl_context = sdl2::init()?;
-    let video_subsystem = sdl_context.video()?;
-
-    let window = video_subsystem.window("rust-sdl2 demo: Video", 800, 600)
-        .position_centered()
-        .resizable()
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let mut canvas = window.into_canvas().build().map_err(|e| e.to_string())?;
-
     let clctx = Rc::new(RefCell::new(ClContext {
         sim: Simulator {
             ops: Vec::new(),
@@ -458,81 +449,15 @@ pub fn main() -> Result<(), String> {
         panic!("script did not setup a global draw() function!");
     }
 
-    let mut event_pump = sdl_context.event_pump()?;
-
-//    let ttf_ctx = sdl2::ttf::init().map_err(|e| e.to_string())?;
-
-//    let mut font = ttf_ctx.load_font("DejaVuSansMono.ttf", 14).map_err(|e| e.to_string())?;
-////    font.set_style(sdl2::ttf::FontStyle::BOLD | sdl2::ttf::FontStyle::UNDERLINE);
-//    font.set_hinting(sdl2::ttf::Hinting::Normal);
-////    font.set_outline_width(0.1);
-//    font.set_kerning(true);
+    let mut window: PistonWindow =
+        WindowSettings::new("Hello Piston!", [640, 480])
+        .exit_on_esc(true).build().unwrap();
 
     let mut start_time = Instant::now();
-    let mut last_frame = Instant::now();
-    let mut is_first = true;
-    'running: loop {
-        let event = event_pump.wait_event_timeout(16);
-        if let Some(event) = event {
-            match event {
-                Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    break 'running
-                },
-//                Event::KeyDown { keycode: Some(Keycode::H), .. } => {
-//                },
-//                Event::KeyDown { keycode: Some(Keycode::J), .. } => {
-//                },
-//                Event::KeyDown { keycode: Some(Keycode::K), .. } => {
-//                },
-//                Event::KeyDown { keycode: Some(Keycode::L), .. } => {
-//                },
-//                Event::KeyDown { keycode: Some(Keycode::U), .. } => {
-//                },
-//                Event::KeyDown { keycode: Some(Keycode::S), .. } => {
-//                },
-//                Event::KeyDown { keycode: Some(Keycode::X), .. } => {
-//                },
-//                Event::KeyDown { keycode: Some(Keycode::Y), .. } => {
-//                },
-//                Event::MouseButtonDown { x: x, y: y, .. } => {
-//                },
-//                Event::TextInput { text: text, .. } => {
-//                    println!("TEXT: {}", text);
-//                },
-//                Event::MouseWheel { y: y, direction: dir, .. } => {
-//                    match dir {
-//                        sdl2::mouse::MouseWheelDirection::Normal => {
-//                            println!("DIR NORMAL");
-//                        },
-//                        sdl2::mouse::MouseWheelDirection::Flipped => {
-//                            println!("DIR FLOP");
-//                        },
-//                        _ => {}
-//                    }
-//                },
-//                Event::Window { win_event: w, timestamp: _, window_id: _ } => {
-//                    match w {
-//                        WindowEvent::Resized(w, h) => { },
-//                        WindowEvent::SizeChanged(w, h) => { },
-//                        WindowEvent::FocusGained => { },
-//                        WindowEvent::FocusLost => { },
-//                        _ => {}
-//                    }
-//                },
-                _ => {}
-            }
-        }
-
-        let frame_time = last_frame.elapsed().as_millis();
-        //println!("FO {},{},{}", frame_time, is_first, force_redraw);
-
-        if is_first || frame_time >= 16 {
+    while let Some(event) = window.next() {
+        window.draw_2d(&event, |context, graphics, _device| {
             extern crate palette;
             use palette::{Rgb};
-//            use palette::pixel::Srgb;
-
-            canvas.set_draw_color(Color::RGB(0, 0, 0));
-            canvas.clear();
 
             let now_time = start_time.elapsed().as_millis();
             let r = ctx.call(&draw_cb, &vec![VVal::Int(now_time as i64)]).unwrap();
@@ -541,18 +466,100 @@ pub fn main() -> Result<(), String> {
 
             clctx.borrow_mut().exec(now_time as f32);
 
-            canvas.set_draw_color(Color::RGB(
-                (rc.red * 255.0) as u8,
-                (rc.green * 255.0) as u8,
-                (rc.blue * 255.0) as u8));
-            canvas.fill_rect(Rect::new(10, 10, 400, 400));
-//            r.at(0).i();
-            canvas.present();
-            last_frame = Instant::now();
-        }
-
-        is_first = false;
+            clear([rc.red, rc.green, rc.blue, 1.0], graphics);
+            rectangle([1.0, 0.0, 0.0, 1.0], // red
+                      [0.0, 0.0, r.f() * 1.0, 100.0],
+                      context.transform,
+                      graphics);
+        });
     }
+
+
+//    let mut start_time = Instant::now();
+//    let mut last_frame = Instant::now();
+//    let mut is_first = true;
+//    'running: loop {
+//        let event = event_pump.wait_event_timeout(16);
+//        if let Some(event) = event {
+//            match event {
+//                Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+//                    break 'running
+//                },
+////                Event::KeyDown { keycode: Some(Keycode::H), .. } => {
+////                },
+////                Event::KeyDown { keycode: Some(Keycode::J), .. } => {
+////                },
+////                Event::KeyDown { keycode: Some(Keycode::K), .. } => {
+////                },
+////                Event::KeyDown { keycode: Some(Keycode::L), .. } => {
+////                },
+////                Event::KeyDown { keycode: Some(Keycode::U), .. } => {
+////                },
+////                Event::KeyDown { keycode: Some(Keycode::S), .. } => {
+////                },
+////                Event::KeyDown { keycode: Some(Keycode::X), .. } => {
+////                },
+////                Event::KeyDown { keycode: Some(Keycode::Y), .. } => {
+////                },
+////                Event::MouseButtonDown { x: x, y: y, .. } => {
+////                },
+////                Event::TextInput { text: text, .. } => {
+////                    println!("TEXT: {}", text);
+////                },
+////                Event::MouseWheel { y: y, direction: dir, .. } => {
+////                    match dir {
+////                        sdl2::mouse::MouseWheelDirection::Normal => {
+////                            println!("DIR NORMAL");
+////                        },
+////                        sdl2::mouse::MouseWheelDirection::Flipped => {
+////                            println!("DIR FLOP");
+////                        },
+////                        _ => {}
+////                    }
+////                },
+////                Event::Window { win_event: w, timestamp: _, window_id: _ } => {
+////                    match w {
+////                        WindowEvent::Resized(w, h) => { },
+////                        WindowEvent::SizeChanged(w, h) => { },
+////                        WindowEvent::FocusGained => { },
+////                        WindowEvent::FocusLost => { },
+////                        _ => {}
+////                    }
+////                },
+//                _ => {}
+//            }
+//        }
+//
+//        let frame_time = last_frame.elapsed().as_millis();
+//        //println!("FO {},{},{}", frame_time, is_first, force_redraw);
+//
+//        if is_first || frame_time >= 16 {
+//            extern crate palette;
+//            use palette::{Rgb};
+////            use palette::pixel::Srgb;
+//
+//            canvas.set_draw_color(Color::RGB(0, 0, 0));
+//            canvas.clear();
+//
+//            let now_time = start_time.elapsed().as_millis();
+//            let r = ctx.call(&draw_cb, &vec![VVal::Int(now_time as i64)]).unwrap();
+//            let hue : palette::Hsv = palette::Hsv::new((r.f() as f32).into(), 1.0, 1.0);
+//            let rc : Rgb = hue.into();
+//
+//            clctx.borrow_mut().exec(now_time as f32);
+//
+//            canvas.set_draw_color(Color::RGB(
+//                (rc.red * 255.0) as u8,
+//                (rc.green * 255.0) as u8,
+//                (rc.blue * 255.0) as u8));
+//            canvas.fill_rect(Rect::new(10, 10, 400, 400));
+////            r.at(0).i();
+//            canvas.present();
+//            last_frame = Instant::now();
+//        }
+//
+//        is_first = false;
+//    }
 
     Ok(())
 }
