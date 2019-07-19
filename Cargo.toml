@@ -12,6 +12,6 @@ wlambda= { path = "../wlambda" }
 [dependencies.sdl2]
 version="0.32"
 default-features=false
-features=["ttf","bundled"]
+features=["ttf","bundled","gfx"]
 #,"image","gfx","ttf"]
 #,"mixer"]
