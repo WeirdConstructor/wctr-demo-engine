@@ -293,25 +293,39 @@ pub enum Turtle {
     Dir(OpIn, OpIn),
     RotDir(OpIn),
     RotCtx(OpIn),
-    Area((OpIn, OpIn, OpIn, OpIn), Box<Turtle>),
+    RotTrans(OpIn),
+    Area((OpIn, OpIn), Box<Turtle>),
     Move(OpIn, OpIn),
+    MoveTrans(OpIn, OpIn),
     Rect(OpIn, OpIn),
     Line(OpIn, OpIn, OpIn),
 }
 
 impl Turtle {
-    fn exec<T>(&self, x: &mut f64, y: &mut f64, w: &mut f64, h: &mut f64, rot_ctx: &mut f64, regs: &[f32], context: &piston_window::Context, graphics: &mut T)
+    fn exec<T>(&self, x: &mut f64, y: &mut f64, w: &mut f64, h: &mut f64, rot_ctx: &mut f64, transf: &mut [[f64; 3]; 2], regs: &[f32], context: &piston_window::Context, graphics: &mut T)
         where T: piston_window::Graphics {
         //d// println!("EXEC T {:?}", self);
         match self {
             Turtle::Commands(v) => {
                 for c in v.iter() {
-                    c.exec(x, y, w, h, rot_ctx, regs, context, graphics);
+                    c.exec(x, y, w, h, rot_ctx, transf, regs, context, graphics);
                 }
+            },
+            Turtle::Area((taw, tah), bt) => {
             },
             Turtle::Move(xo, yo) => {
                 *x += xo.calc(regs) as f64 * *w;
                 *y += yo.calc(regs) as f64 * *h;
+            },
+            Turtle::MoveTrans(xo, yo) => {
+                let x = xo.calc(regs) as f64 * *w;
+                let y = yo.calc(regs) as f64 * *h;
+                *transf = (*transf).trans(x, y);
+            },
+            Turtle::RotTrans(rot) => {
+                let rot = rot.calc(regs) as f64;
+                *transf = (*transf).rot_rad(rot);
+                *rot_ctx += rot;
             },
             Turtle::RotCtx(rot) => {
                 let rot = rot.calc(regs) as f64;
@@ -323,7 +337,7 @@ impl Turtle {
                 //d// println!("WW {:?} {:?} | {} {} {} {}", rw, rh, wh, hh, x, y);
                 rectangle([1.0, 1.0, 1.0,  1.0],
                           [-wh, -hh, wh * 2.0, hh * 2.0],
-                          context.transform.trans(*x, *y).rot_rad(*rot_ctx), graphics);
+                          (*transf), graphics); // .trans(*x, *y).rot_rad(*rot_ctx), graphics);
                 ()
             },
             _ => (),
@@ -560,10 +574,27 @@ pub fn main() -> Result<(), String> {
                     "cmds" => {
                         clx.pack_turtle();
                     },
+                    // TODO!
+//                    "area" => {
+//                        getOpIn!(a1, aw);
+//                        getOpIn!(a2, ah);
+//                        clx.pack_turtle();
+//                        let t = Box::new(clx.cur_turtle_cmds.pop().unwrap());
+//                        clx.add_turtle(Turtle::Area((aw, ah), t));
+//                    },
+                    "move_trans" => {
+                        getOpIn!(a1, xo);
+                        getOpIn!(a2, yo);
+                        clx.add_turtle(Turtle::MoveTrans(xo, yo));
+                    },
                     "move" => {
                         getOpIn!(a1, xo);
                         getOpIn!(a2, yo);
                         clx.add_turtle(Turtle::Move(xo, yo));
+                    },
+                    "rot_trans" => {
+                        getOpIn!(a1, rot);
+                        clx.add_turtle(Turtle::RotTrans(rot));
                     },
                     "rot_ctx" => {
                         getOpIn!(a1, rot);
@@ -671,12 +702,14 @@ pub fn main() -> Result<(), String> {
             let mut ty = 100.0;
             let mut tw = 200.0;
             let mut th = 200.0;
+            let mut transf = context.transform;
             t.exec(
                 &mut tx,
                 &mut ty,
                 &mut tw,
                 &mut th,
                 &mut rot_ctx,
+                &mut transf,
                 &clctx.borrow().sim.regs,
                 &context,
                 graphics);

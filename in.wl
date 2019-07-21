@@ -29,20 +29,30 @@ displayln "SIN: " outreg;
 #range 1 10000 1 {
 #    new _ :sin;
 #};
-t :rot_ctx $[:mul, outreg, 3.14 * 3];
+
+t :move_trans 1 1;
+t :rot_trans $[:reg, outreg, 2];
 t :rect
   $[:mul, outreg, 0.2]
   $[:reg, outreg, 0.3];
-t :move 1 0;
-t :rot_ctx $[:mul, outreg, 3.14 * 10];
-t :move 0.1 0.1;
+t :rot_trans $[:mul, outreg, -1];
+t :move_trans 1 1;
+t :rot_trans $[:mul, outreg, 1];
 t :rect
-  $[:mul, outreg, 0.1]
-  $[:reg, outreg, 0.1];
-t :move 0.3 0.3;
-t :rect
-  $[:mul, outreg, 0.1]
-  $[:reg, outreg, 0.1];
+  $[:mul, outreg, 0.2]
+  $[:reg, outreg, 0.3];
+#t :rot_ctx $[:mul, outreg, 3.14 * 3];
+#t :rect
+#t :move 1 0;
+#t :rot_ctx $[:mul, outreg, 3.14 * 10];
+#t :move 0.1 0.1;
+#t :rect
+#  $[:mul, outreg, 0.1]
+#  $[:reg, outreg, 0.1];
+#t :move 0.3 0.3;
+#t :rect
+#  $[:mul, outreg, 0.1]
+#  $[:reg, outreg, 0.1];
 t :cmds;
 
 !:global draw = {|1|
