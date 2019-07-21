@@ -276,6 +276,39 @@ Basic building blocks:
 //    draw_text(font, color, canvas, x, y, max_w, txt);
 //}
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum OpIn {
+    Constant(f32),
+    Reg(usize),
+    RegMix2(usize, usize, f32),
+    RegMul(usize,f32),
+    RegLerp(usize,f32,f32),
+    RegSStep(usize,f32,f32),
+    RegMap(usize,f32,f32,f32,f32),
+}
+
+impl OpIn {
+    fn calc(&self, regs: &mut [f32]) -> f32 {
+        match self {
+            OpIn::Constant(v)            => *v,
+            OpIn::Reg(i)                 => regs[*i],
+            OpIn::RegMix2(ia, ib, am)    => regs[*ia] * am + regs[*ib] * (1.0 - am),
+            OpIn::RegMul(i, v)           => v * regs[*i],
+            OpIn::RegLerp(i, a, b)       => (a * regs[*i]) + (b * (1.0 - regs[*i])),
+            OpIn::RegSStep(i, a, b)      => {
+                let x = (regs[*i] - a) / (b - a);
+                let x = if x < 0.0 { 0.0 } else { x };
+                let x = if x > 1.0 { 1.0 } else { x };
+                x * x * (3.0 - 2.0 * x)
+            },
+            OpIn::RegMap(i, a_frm, b_frm, a_to, b_to) => {
+                let x = (regs[*i] - a_frm) / (b_frm - a_frm);
+                (a_to * x) + (b_to * (1.0 - x))
+            },
+        }
+    }
+}
+
 trait DemOp {
     fn alloc_regs(&self) -> usize;
     fn init_regs(&mut self, start_reg: usize, regs: &mut [f32]);
@@ -453,6 +486,9 @@ pub fn main() -> Result<(), String> {
         WindowSettings::new("Hello Piston!", [640, 480])
         .exit_on_esc(true).build().unwrap();
 
+    let mut cnt = 0;
+    let mut avg = 0;
+
     let mut start_time = Instant::now();
     while let Some(event) = window.next() {
         window.draw_2d(&event, |context, graphics, _device| {
@@ -464,7 +500,15 @@ pub fn main() -> Result<(), String> {
             let hue : palette::Hsv = palette::Hsv::new((r.f() as f32).into(), 1.0, 1.0);
             let rc : Rgb = hue.into();
 
+            let mut b = Instant::now();
             clctx.borrow_mut().exec(now_time as f32);
+            avg += b.elapsed().as_millis();
+            cnt += 1;
+            if cnt > 30 {
+                println!("exec took {}", avg / cnt);
+                cnt = 0;
+                avg = 0;
+            }
 
             clear([0.1; 4], graphics);
 
