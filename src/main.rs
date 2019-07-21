@@ -466,11 +466,20 @@ pub fn main() -> Result<(), String> {
 
             clctx.borrow_mut().exec(now_time as f32);
 
-            clear([rc.red, rc.green, rc.blue, 1.0], graphics);
-            rectangle([1.0, 0.0, 0.0, 1.0], // red
-                      [0.0, 0.0, r.f() * 1.0, 100.0],
-                      context.transform,
-                      graphics);
+            clear([0.1; 4], graphics);
+
+            rectangle([rc.red, rc.green, rc.blue,  1.0],
+                      [100.0, 100.0, r.f() * 1.0, 100.0],
+                      context.transform, graphics);
+            rectangle([1.0, 0.0, rc.blue, 1.0],
+                      [400.0, 100.0, r.f() * 1.0, 100.0],
+                      context.transform, graphics);
+            rectangle([rc.red, rc.green, 0.0, 1.0],
+                      [100.0, 400.0, r.f() * 1.0, 100.0],
+                      context.transform, graphics);
+            rectangle([1.0, rc.green, rc.blue, 1.0],
+                      [400.0, 400.0, r.f() * 1.0, 100.0],
+                      context.transform, graphics);
         });
     }
 
