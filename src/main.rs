@@ -310,65 +310,65 @@ impl OpIn {
 }
 
 trait DemOp {
-    fn alloc_regs(&self) -> usize;
+    fn input_count(&self) -> usize;
+    fn output_count(&self) -> usize;
     fn init_regs(&mut self, start_reg: usize, regs: &mut [f32]);
-    fn get_reg(&mut self, name: &str) -> Option<usize>;
-    fn link_reg(&mut self, name: &str, to: usize) -> bool;
+    fn get_output_reg(&mut self, name: &str) -> Option<usize>;
+    fn set_input(&mut self, name: &str, to: OpIn) -> bool;
     fn exec(&mut self, t: f32, regs: &mut [f32]);
 }
 
 struct DoSin {
-    amp:    usize,
-    phase:  usize,
-    vert:   usize,
-    f:      usize,
+    amp:    OpIn,
+    phase:  OpIn,
+    vert:   OpIn,
+    f:      OpIn,
     out:    usize,
 }
 
 impl DoSin {
-    fn new() -> Self { DoSin { amp: 0, phase: 0, vert: 0, out: 0, f: 0 } }
+    fn new() -> Self {
+        DoSin {
+            amp:   OpIn::Constant(1.0),
+            phase: OpIn::Constant(0.0),
+            vert:  OpIn::Constant(0.0),
+            f:     OpIn::Constant(0.001),
+            out:   0,
+        }
+    }
 }
 
 impl DemOp for DoSin {
-    fn alloc_regs(&self) -> usize { 5 }
-    fn init_regs(&mut self, start_reg: usize, regs: &mut [f32]) {
-        regs[start_reg]     = 1.0;
-        regs[start_reg + 3] = 0.001;
+    fn input_count(&self) -> usize { 4 }
+    fn output_count(&self) -> usize { 1 }
 
-        self.amp   = start_reg;
-        self.phase = start_reg + 1;
-        self.vert  = start_reg + 2;
-        self.f     = start_reg + 3;
-        self.out   = start_reg + 4;
+    fn init_regs(&mut self, start_reg: usize, regs: &mut [f32]) {
+        regs[start_reg] = 0.0;
+        self.out   = start_reg;
     }
 
-    fn get_reg(&mut self, name: &str) -> Option<usize> {
+    fn get_output_reg(&mut self, name: &str) -> Option<usize> {
         match name {
-            "amp"   => Some(self.amp),
-            "phase" => Some(self.phase),
-            "vert"  => Some(self.vert),
-            "freq"  => Some(self.f),
             "out"   => Some(self.out),
             _       => None,
         }
     }
 
-    fn link_reg(&mut self, name: &str, to: usize) -> bool {
+    fn set_input(&mut self, name: &str, to: OpIn) -> bool {
         match name {
             "amp"   => { self.amp   = to; true },
             "phase" => { self.phase = to; true },
             "vert"  => { self.vert  = to; true },
             "freq"  => { self.f     = to; true },
-            "out"   => { self.out   = to; true },
             _       => false,
         }
     }
 
     fn exec(&mut self, t: f32, regs: &mut [f32]) {
-        let a = regs[self.amp];
-        let p = regs[self.phase];
-        let v = regs[self.vert];
-        let f = regs[self.f];
+        let a = self.amp.calc(regs);
+        let p = self.phase.calc(regs);
+        let v = self.vert.calc(regs);
+        let f = self.f.calc(regs);
         regs[self.out] = a * (((f * t) + p).sin() + v);
         //d// println!("OUT: {}, {}", regs[self.out], self.out);
     }
@@ -392,9 +392,9 @@ impl ClContext {
         };
 
         let new_start_reg = sim.regs.len();
-        sim.regs.resize(sim.regs.len() + o.alloc_regs(), 0.0);
+        sim.regs.resize(sim.regs.len() + o.output_count(), 0.0);
         o.init_regs(new_start_reg, &mut sim.regs[..]);
-        let out_reg = o.get_reg("out");
+        let out_reg = o.get_output_reg("out");
 
         sim.ops.insert(idx, o);
 
@@ -484,12 +484,13 @@ pub fn main() -> Result<(), String> {
 
     let mut window: PistonWindow =
         WindowSettings::new("Hello Piston!", [640, 480])
+        .resizable(true)
         .exit_on_esc(true).build().unwrap();
 
     let mut cnt = 0;
     let mut avg = 0;
 
-    let mut start_time = Instant::now();
+    let start_time = Instant::now();
     while let Some(event) = window.next() {
         window.draw_2d(&event, |context, graphics, _device| {
             extern crate palette;
@@ -500,11 +501,11 @@ pub fn main() -> Result<(), String> {
             let hue : palette::Hsv = palette::Hsv::new((r.f() as f32).into(), 1.0, 1.0);
             let rc : Rgb = hue.into();
 
-            let mut b = Instant::now();
+            let b = Instant::now();
             clctx.borrow_mut().exec(now_time as f32);
             avg += b.elapsed().as_millis();
             cnt += 1;
-            if cnt > 30 {
+            if cnt > 100 {
                 println!("exec took {}", avg / cnt);
                 cnt = 0;
                 avg = 0;
@@ -512,12 +513,37 @@ pub fn main() -> Result<(), String> {
 
             clear([0.1; 4], graphics);
 
+            // Turtle:
+            //      color   (3 arbitrary OpIn regs: hsv)
+            //      push        - state push (pos, direction, color)
+            //      pop         - state pop
+            //      move_to
+            //      rot_rad (direction from last 2 movements)
+            //      rot_deg (direction from last 2 movements)
+            //      line_to
+            //      line_walk
+            //      rect_walk
+            //      rect_to
+            //      rect
+            //      arc
+            //      ellipse_walk
+            //      ellipse_to
+            //      ellipse
+
+            line_from_to(
+                [rc.red, rc.green, rc.blue,  1.0],
+                2.2 * r.f(),
+                [200.0, 150.0],
+                [300.0, 350.0],
+                context.transform,
+                graphics);
+
             rectangle([rc.red, rc.green, rc.blue,  1.0],
                       [100.0, 100.0, r.f() * 1.0, 100.0],
-                      context.transform, graphics);
+                      context.transform.rot_deg(r.f()), graphics);
             rectangle([1.0, 0.0, rc.blue, 1.0],
-                      [400.0, 100.0, r.f() * 1.0, 100.0],
-                      context.transform, graphics);
+                      [0.0, 0.0, r.f() * 1.0, 100.0],
+                      context.transform.trans(450.0, 150.0).rot_deg(r.f()).trans((-r.f() * 1.0) * 0.5, -50.0), graphics);
             rectangle([rc.red, rc.green, 0.0, 1.0],
                       [100.0, 400.0, r.f() * 1.0, 100.0],
                       context.transform, graphics);
