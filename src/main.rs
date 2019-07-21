@@ -287,8 +287,52 @@ pub enum OpIn {
     RegMap(usize,f32,f32,f32,f32),
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum Turtle {
+    Commands(Vec<Turtle>),
+    Dir(OpIn, OpIn),
+    RotDir(OpIn),
+    RotCtx(OpIn),
+    Area((OpIn, OpIn, OpIn, OpIn), Box<Turtle>),
+    Move(OpIn, OpIn),
+    Rect(OpIn, OpIn),
+    Line(OpIn, OpIn, OpIn),
+}
+
+impl Turtle {
+    fn exec<T>(&self, x: &mut f64, y: &mut f64, w: &mut f64, h: &mut f64, rot_ctx: &mut f64, regs: &[f32], context: &piston_window::Context, graphics: &mut T)
+        where T: piston_window::Graphics {
+        //d// println!("EXEC T {:?}", self);
+        match self {
+            Turtle::Commands(v) => {
+                for c in v.iter() {
+                    c.exec(x, y, w, h, rot_ctx, regs, context, graphics);
+                }
+            },
+            Turtle::Move(xo, yo) => {
+                *x += xo.calc(regs) as f64 * *w;
+                *y += yo.calc(regs) as f64 * *h;
+            },
+            Turtle::RotCtx(rot) => {
+                let rot = rot.calc(regs) as f64;
+                *rot_ctx += rot;
+            },
+            Turtle::Rect(rw, rh) => {
+                let wh = ((rw.calc(regs) * *w as f32) / 2.0) as f64;
+                let hh = ((rh.calc(regs) * *h as f32) / 2.0) as f64;
+                //d// println!("WW {:?} {:?} | {} {} {} {}", rw, rh, wh, hh, x, y);
+                rectangle([1.0, 1.0, 1.0,  1.0],
+                          [-wh, -hh, wh * 2.0, hh * 2.0],
+                          context.transform.trans(*x, *y).rot_rad(*rot_ctx), graphics);
+                ()
+            },
+            _ => (),
+        }
+    }
+}
+
 impl OpIn {
-    fn calc(&self, regs: &mut [f32]) -> f32 {
+    fn calc(&self, regs: &[f32]) -> f32 {
         match self {
             OpIn::Constant(v)            => *v,
             OpIn::Reg(i)                 => regs[*i],
@@ -305,6 +349,46 @@ impl OpIn {
                 let x = (regs[*i] - a_frm) / (b_frm - a_frm);
                 (a_to * x) + (b_to * (1.0 - x))
             },
+        }
+    }
+
+    fn vv2opin(v: VVal) -> Option<Self> {
+        let t = if v.is_vec() {
+            v.at(0).unwrap_or(VVal::Nul)
+        } else {
+            v.clone()
+        };
+
+        if t.is_sym() || t.is_str() {
+            let s = t.s_raw();
+            match &s[..] {
+                "reg"  => Some(OpIn::Reg(
+                            v.at(1).unwrap_or(VVal::Nul).i() as usize)),
+                "mix2" => Some(OpIn::RegMix2(
+                            v.at(1).unwrap_or(VVal::Nul).i() as usize,
+                            v.at(2).unwrap_or(VVal::Nul).i() as usize,
+                            v.at(3).unwrap_or(VVal::Nul).f() as f32)),
+                "mul"  => Some(OpIn::RegMul(
+                            v.at(1).unwrap_or(VVal::Nul).i() as usize,
+                            v.at(2).unwrap_or(VVal::Nul).f() as f32)),
+                "lerp" => Some(OpIn::RegLerp(
+                            v.at(1).unwrap_or(VVal::Nul).i() as usize,
+                            v.at(2).unwrap_or(VVal::Nul).f() as f32,
+                            v.at(3).unwrap_or(VVal::Nul).f() as f32)),
+                "sstep" => Some(OpIn::RegSStep(
+                            v.at(1).unwrap_or(VVal::Nul).i() as usize,
+                            v.at(2).unwrap_or(VVal::Nul).f() as f32,
+                            v.at(3).unwrap_or(VVal::Nul).f() as f32)),
+                "map" => Some(OpIn::RegMap(
+                            v.at(1).unwrap_or(VVal::Nul).i() as usize,
+                            v.at(2).unwrap_or(VVal::Nul).f() as f32,
+                            v.at(3).unwrap_or(VVal::Nul).f() as f32,
+                            v.at(4).unwrap_or(VVal::Nul).f() as f32,
+                            v.at(5).unwrap_or(VVal::Nul).f() as f32)),
+                _ => None
+            }
+        } else {
+            Some(OpIn::Constant(t.f() as f32))
         }
     }
 }
@@ -381,6 +465,8 @@ struct Simulator {
 
 struct ClContext {
     sim: Simulator,
+    cur_turtle_cmds: Vec<Turtle>,
+    turtle_stack:    Vec<Turtle>,
 }
 
 impl ClContext {
@@ -423,6 +509,28 @@ impl ClContext {
             r.as_mut().exec(t, &mut self.sim.regs[..]);
         }
     }
+
+    fn pack_turtle(&mut self) {
+        let t =
+            Turtle::Commands(
+                std::mem::replace(&mut self.cur_turtle_cmds, Vec::new()));
+        self.cur_turtle_cmds.push(t);
+    }
+
+    fn add_turtle(&mut self, t: Turtle) {
+        println!("ADD TURTLE: {:?}", t);
+        self.cur_turtle_cmds.push(t);
+    }
+}
+
+macro_rules! getOpIn {
+    ($arg: ident, $o: ident) => {
+        let $o = if let Some(o) = OpIn::vv2opin($arg.clone()) {
+            o
+        } else {
+            return Ok(VVal::err_msg(&format!("Bad register '{}'", $arg.s())));
+        };
+    }
 }
 
 pub fn main() -> Result<(), String> {
@@ -431,12 +539,50 @@ pub fn main() -> Result<(), String> {
 
     let clctx = Rc::new(RefCell::new(ClContext {
         sim: Simulator {
-            ops: Vec::new(),
+            ops:  Vec::new(),
             regs: Vec::new(),
         },
+        cur_turtle_cmds: Vec::new(),
+        turtle_stack:    Vec::new(),
     }));
 
     let global_env = create_wlamba_prelude();
+
+    global_env.borrow_mut().add_func(
+        "t", |env: &mut Env, _argc: usize| {
+            let node_type = env.arg(0).s_raw();
+            let a1 = env.arg(1).clone();
+            let a2 = env.arg(2).clone();
+            let a3 = env.arg(3).clone();
+
+            env.with_user_do(|clx: &mut ClContext| {
+                match &node_type[..] {
+                    "cmds" => {
+                        clx.pack_turtle();
+                    },
+                    "move" => {
+                        getOpIn!(a1, xo);
+                        getOpIn!(a2, yo);
+                        clx.add_turtle(Turtle::Move(xo, yo));
+                    },
+                    "rot_ctx" => {
+                        getOpIn!(a1, rot);
+                        clx.add_turtle(Turtle::RotCtx(rot));
+                    },
+                    "rect" => {
+                        getOpIn!(a1, w);
+                        getOpIn!(a2, h);
+                        clx.add_turtle(Turtle::Rect(w, h));
+                    },
+                    _ => {
+                        return Ok(VVal::err_msg(
+                            &format!("Bad turtle type '{}'", node_type)))
+                    }
+                }
+
+                Ok(VVal::Bol(true))
+            })
+        }, Some(1), None);
 
     global_env.borrow_mut().add_func(
         "reg", |env: &mut Env, argc: usize| {
@@ -444,7 +590,7 @@ pub fn main() -> Result<(), String> {
             let val = env.arg(1).f() as f32;
 
             if argc > 1 {
-                env.with_user_do(|clx: &mut ClContext| {
+            env.with_user_do(|clx: &mut ClContext| {
                     clx.set_reg(reg, val);
                 });
                 Ok(VVal::Bol(true))
@@ -470,8 +616,11 @@ pub fn main() -> Result<(), String> {
             })
         }, Some(2), Some(2));
 
-    let mut ctx = wlambda::compiler::EvalContext::new_with_user(global_env, clctx.clone());
-    ctx.eval_file(&std::env::args().nth(1).unwrap_or("in.wl".to_string())).unwrap();
+    let mut ctx =
+        wlambda::compiler::EvalContext::new_with_user(
+            global_env, clctx.clone());
+    ctx.eval_file(
+        &std::env::args().nth(1).unwrap_or("in.wl".to_string())).unwrap();
 
     let draw_cb = ctx.get_global_var("draw");
     if draw_cb.is_none() {
@@ -497,12 +646,16 @@ pub fn main() -> Result<(), String> {
             use palette::{Rgb};
 
             let now_time = start_time.elapsed().as_millis();
-            let r = ctx.call(&draw_cb, &vec![VVal::Int(now_time as i64)]).unwrap();
-            let hue : palette::Hsv = palette::Hsv::new((r.f() as f32).into(), 1.0, 1.0);
+            let r = ctx.call(
+                &draw_cb,
+                &vec![VVal::Int(now_time as i64)]).unwrap();
+            let hue : palette::Hsv =
+                palette::Hsv::new((r.f() as f32).into(), 1.0, 1.0);
             let rc : Rgb = hue.into();
 
             let b = Instant::now();
             clctx.borrow_mut().exec(now_time as f32);
+            let t = clctx.borrow_mut().cur_turtle_cmds[0].clone();
             avg += b.elapsed().as_millis();
             cnt += 1;
             if cnt > 100 {
@@ -512,6 +665,21 @@ pub fn main() -> Result<(), String> {
             }
 
             clear([0.1; 4], graphics);
+
+            let mut rot_ctx = 0.0;
+            let mut tx = 100.0;
+            let mut ty = 100.0;
+            let mut tw = 200.0;
+            let mut th = 200.0;
+            t.exec(
+                &mut tx,
+                &mut ty,
+                &mut tw,
+                &mut th,
+                &mut rot_ctx,
+                &clctx.borrow().sim.regs,
+                &context,
+                graphics);
 
             // Turtle:
             //      color   (3 arbitrary OpIn regs: hsv)
@@ -530,26 +698,26 @@ pub fn main() -> Result<(), String> {
             //      ellipse_to
             //      ellipse
 
-            line_from_to(
-                [rc.red, rc.green, rc.blue,  1.0],
-                2.2 * r.f(),
-                [200.0, 150.0],
-                [300.0, 350.0],
-                context.transform,
-                graphics);
+//            line_from_to(
+//                [rc.red, rc.green, rc.blue,  1.0],
+//                2.2 * r.f(),
+//                [200.0, 150.0],
+//                [300.0, 350.0],
+//                context.transform,
+//                graphics);
 
-            rectangle([rc.red, rc.green, rc.blue,  1.0],
-                      [100.0, 100.0, r.f() * 1.0, 100.0],
-                      context.transform.rot_deg(r.f()), graphics);
-            rectangle([1.0, 0.0, rc.blue, 1.0],
-                      [0.0, 0.0, r.f() * 1.0, 100.0],
-                      context.transform.trans(450.0, 150.0).rot_deg(r.f()).trans((-r.f() * 1.0) * 0.5, -50.0), graphics);
-            rectangle([rc.red, rc.green, 0.0, 1.0],
-                      [100.0, 400.0, r.f() * 1.0, 100.0],
-                      context.transform, graphics);
-            rectangle([1.0, rc.green, rc.blue, 1.0],
-                      [400.0, 400.0, r.f() * 1.0, 100.0],
-                      context.transform, graphics);
+//            rectangle([rc.red, rc.green, rc.blue,  1.0],
+//                      [100.0, 100.0, r.f() * 1.0, 100.0],
+//                      context.transform.rot_deg(r.f()), graphics);
+//            rectangle([1.0, 0.0, rc.blue, 1.0],
+//                      [0.0, 0.0, r.f() * 1.0, 100.0],
+//                      context.transform.trans(450.0, 150.0).rot_deg(r.f()).trans((-r.f() * 1.0) * 0.5, -50.0), graphics);
+//            rectangle([rc.red, rc.green, 0.0, 1.0],
+//                      [100.0, 400.0, r.f() * 1.0, 100.0],
+//                      context.transform, graphics);
+//            rectangle([1.0, rc.green, rc.blue, 1.0],
+//                      [400.0, 400.0, r.f() * 1.0, 100.0],
+//                      context.transform, graphics);
         });
     }
 
