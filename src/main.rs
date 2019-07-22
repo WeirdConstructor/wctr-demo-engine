@@ -12,11 +12,12 @@ use std::cell::RefCell;
 use std::time::{Instant};
 use wlambda;
 use wlambda::vval::VVal;
+use vecmath;
 
 /* TODO:
 
-    - use turtle state
-    - implement turtle color
+    X use turtle state
+    X implement turtle color
     - implement turtle vector direction
     - implement turtle line drawing
     - check out filemanager project GUI for possible
@@ -342,13 +343,14 @@ pub enum Turtle {
     Move(OpIn, OpIn),
     Area((OpIn, OpIn), Box<Turtle>),
     Rect(OpIn, OpIn, ColorIn),
-    Line(OpIn, OpIn, OpIn),
+    Line(OpIn, OpIn, ColorIn),
 }
 
 struct TurtleState {
     w:          f64,
     h:          f64,
-//    dir:        [f64; 2],
+    pos:        [f64; 2],
+    dir:        [f64; 2],
     transf:     [[f64; 3]; 2],
 //    color:      [f32; 4],
 }
@@ -386,6 +388,31 @@ impl Turtle {
             Turtle::Rot(rot) => {
                 let rot = rot.calc(regs) as f64;
                 ts.transf = (ts.transf).rot_rad(rot);
+            },
+            Turtle::Dir(x, y) => {
+                let x = x.calc(regs);
+                let y = y.calc(regs);
+                ts.dir = [x as f64, y as f64];
+                ts.dir = vecmath::vec2_normalized(ts.dir);
+            },
+            Turtle::Line(n, thick, color) => {
+                let n     = n.calc(regs);
+                let t     = thick.calc(regs);
+                let color = color.calc(regs);
+                let mut new_pos = vecmath::vec2_scale(ts.dir, n as f64);
+                new_pos[0] = ts.pos[0] + new_pos[0] * ts.w;
+                new_pos[1] = ts.pos[1] + new_pos[1] * ts.h;
+                use piston_window::Ellipse;
+                let o = Ellipse::new(color);
+                o.draw(
+                    ellipse::circle(ts.pos[0], ts.pos[1], t.into()),
+                    &context.draw_state, ts.transf, graphics);
+                o.draw(
+                    ellipse::circle(new_pos[0], new_pos[1], t.into()),
+                    &context.draw_state, ts.transf, graphics);
+                line_from_to(
+                    color, t.into(), ts.pos, new_pos, ts.transf, graphics);
+                ts.pos = new_pos;
             },
             Turtle::Rect(rw, rh, clr) => {
                 let wh = ((rw.calc(regs) * ts.w as f32) / 2.0) as f64;
@@ -708,6 +735,19 @@ pub fn main() -> Result<(), String> {
                         getOpIn!(a1, rot);
                         clx.add_turtle(Turtle::Rot(rot));
                     },
+                    "dir" => {
+                        getOpIn!(a1, x);
+                        getOpIn!(a2, y);
+
+                        clx.add_turtle(Turtle::Dir(x, y));
+                    },
+                    "line" => {
+                        getOpIn!(a1, n);
+                        getOpIn!(a2, t);
+                        getColorIn!(a3, clr);
+
+                        clx.add_turtle(Turtle::Line(n, t, clr));
+                    },
                     "rect" => {
                         getOpIn!(a1, w);
                         getOpIn!(a2, h);
@@ -786,6 +826,8 @@ pub fn main() -> Result<(), String> {
             extern crate palette;
             use palette::{Rgb};
 
+            let b = Instant::now();
+
             let now_time = start_time.elapsed().as_millis();
             let r = ctx.call(
                 &draw_cb,
@@ -794,9 +836,21 @@ pub fn main() -> Result<(), String> {
                 palette::Hsv::new((r.f() as f32).into(), 1.0, 1.0);
             let _rc : Rgb = hue.into();
 
-            let b = Instant::now();
             clctx.borrow_mut().exec(now_time as f32);
             let t = clctx.borrow_mut().cur_turtle_cmds[0].clone();
+
+            clear([0.1; 4], graphics);
+
+            let mut ts = TurtleState {
+                w:      200.0,
+                h:      200.0,
+                dir:    [1.0, 0.0],
+                pos:    [0.0, 0.0],
+                transf: context.transform.clone(),
+//                color:  [1.0, 0.0, 1.0, 1.0],
+            };
+            t.exec(&mut ts, &clctx.borrow().sim.regs, &context, graphics);
+
             avg += b.elapsed().as_millis();
             cnt += 1;
             if cnt > 100 {
@@ -804,17 +858,6 @@ pub fn main() -> Result<(), String> {
                 cnt = 0;
                 avg = 0;
             }
-
-            clear([0.1; 4], graphics);
-
-            let mut ts = TurtleState {
-                w:      200.0,
-                h:      200.0,
-//                dir:    [1.0, 0.0],
-                transf: context.transform.clone(),
-//                color:  [1.0, 0.0, 1.0, 1.0],
-            };
-            t.exec(&mut ts, &clctx.borrow().sim.regs, &context, graphics);
 
             // Turtle:
             //      color   (3 arbitrary OpIn regs: hsv)

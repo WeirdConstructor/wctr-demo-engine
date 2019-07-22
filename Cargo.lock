@@ -1460,6 +1460,7 @@ dependencies = [
  "palette 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "piston2d-graphics 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "piston_window 0.98.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "vecmath 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wlambda 0.2.0",
 ]
 

@@ -10,6 +10,7 @@ chrono = "0.4.6"
 piston2d-graphics = "0.32.0"
 piston_window = "0.98.0"
 wlambda= { path = "../wlambda" }
+vecmath = "1.0.0"
 
 #[dependencies.sdl2]
 #version="0.32"
@@ -17,3 +18,10 @@ wlambda= { path = "../wlambda" }
 #features=["ttf","bundled","gfx"]
 ##,"image","gfx","ttf"]
 ##,"mixer"]
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+incremental = false
+opt-level = "z"
