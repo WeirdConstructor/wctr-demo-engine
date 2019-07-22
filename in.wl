@@ -30,17 +30,17 @@ displayln "SIN: " outreg;
 #    new _ :sin;
 #};
 
-t :move_trans 1 1;
-t :rot_trans $[:reg, outreg, 2];
+t :move 1 1;
 t :rect
   $[:mul, outreg, 0.2]
   $[:reg, outreg, 0.3];
-t :rot_trans $[:mul, outreg, -1];
-t :move_trans 1 1;
-t :rot_trans $[:mul, outreg, 1];
-t :rect
-  $[:mul, outreg, 0.2]
-  $[:reg, outreg, 0.3];
+#t :trans_init;
+#t :rot $[:reg, outreg, 1];
+t :move 0.4 0;
+t :rect $[:mul, outreg, 0.1] $[:mul, outreg, 0.1];
+t :move [-0.8] 0;
+t :rot $[:reg, outreg, 3.146];
+t :rect $[:mul, outreg, 0.2] $[:mul, outreg, 0.2];
 #t :rot_ctx $[:mul, outreg, 3.14 * 3];
 #t :rect
 #t :move 1 0;

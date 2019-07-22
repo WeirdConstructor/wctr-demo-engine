@@ -1460,7 +1460,7 @@ dependencies = [
  "palette 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "piston2d-graphics 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "piston_window 0.98.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "wlambda 0.2.0",
+ "wlambda 0.1.1",
 ]
 
 [[package]]
@@ -1514,7 +1514,7 @@ dependencies = [
 
 [[package]]
 name = "wlambda"
-version = "0.2.0"
+version = "0.1.1"
 dependencies = [
  "chrono 0.4.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex 1.1.9 (registry+https://github.com/rust-lang/crates.io-index)",

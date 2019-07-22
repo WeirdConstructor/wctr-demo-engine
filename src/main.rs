@@ -291,45 +291,41 @@ pub enum OpIn {
 pub enum Turtle {
     Commands(Vec<Turtle>),
     Dir(OpIn, OpIn),
-    RotDir(OpIn),
-    RotCtx(OpIn),
-    RotTrans(OpIn),
-    Area((OpIn, OpIn), Box<Turtle>),
+    Rot(OpIn),
+    TransInit,
     Move(OpIn, OpIn),
-    MoveTrans(OpIn, OpIn),
+    Area((OpIn, OpIn), Box<Turtle>),
     Rect(OpIn, OpIn),
     Line(OpIn, OpIn, OpIn),
 }
 
 impl Turtle {
-    fn exec<T>(&self, x: &mut f64, y: &mut f64, w: &mut f64, h: &mut f64, rot_ctx: &mut f64, transf: &mut [[f64; 3]; 2], regs: &[f32], context: &piston_window::Context, graphics: &mut T)
+    fn exec<T>(&self, w: &mut f64, h: &mut f64, rot_ctx: &mut f64, transf: &mut [[f64; 3]; 2], regs: &[f32], context: &piston_window::Context, graphics: &mut T)
         where T: piston_window::Graphics {
-        //d// println!("EXEC T {:?}", self);
         match self {
             Turtle::Commands(v) => {
                 for c in v.iter() {
-                    c.exec(x, y, w, h, rot_ctx, transf, regs, context, graphics);
+                    c.exec(w, h, rot_ctx, transf, regs, context, graphics);
                 }
             },
             Turtle::Area((taw, tah), bt) => {
             },
-            Turtle::Move(xo, yo) => {
-                *x += xo.calc(regs) as f64 * *w;
-                *y += yo.calc(regs) as f64 * *h;
+            Turtle::TransInit => {
+                *transf = context.transform.clone();
             },
-            Turtle::MoveTrans(xo, yo) => {
+            Turtle::Move(xo, yo) => {
                 let x = xo.calc(regs) as f64 * *w;
                 let y = yo.calc(regs) as f64 * *h;
+//                println!("TRANS {:?}", *transf);
                 *transf = (*transf).trans(x, y);
+//                println!("TRANS AM {:?}", *transf);
             },
-            Turtle::RotTrans(rot) => {
+            Turtle::Rot(rot) => {
                 let rot = rot.calc(regs) as f64;
                 *transf = (*transf).rot_rad(rot);
+//                println!("TRANS {:?}", *transf);
                 *rot_ctx += rot;
-            },
-            Turtle::RotCtx(rot) => {
-                let rot = rot.calc(regs) as f64;
-                *rot_ctx += rot;
+//                println!("TRANS ROT {:?}", *transf);
             },
             Turtle::Rect(rw, rh) => {
                 let wh = ((rw.calc(regs) * *w as f32) / 2.0) as f64;
@@ -582,23 +578,18 @@ pub fn main() -> Result<(), String> {
 //                        let t = Box::new(clx.cur_turtle_cmds.pop().unwrap());
 //                        clx.add_turtle(Turtle::Area((aw, ah), t));
 //                    },
-                    "move_trans" => {
-                        getOpIn!(a1, xo);
-                        getOpIn!(a2, yo);
-                        clx.add_turtle(Turtle::MoveTrans(xo, yo));
+//                  "
+                    "trans_init" => {
+                        clx.add_turtle(Turtle::TransInit);
                     },
                     "move" => {
                         getOpIn!(a1, xo);
                         getOpIn!(a2, yo);
                         clx.add_turtle(Turtle::Move(xo, yo));
                     },
-                    "rot_trans" => {
+                    "rot" => {
                         getOpIn!(a1, rot);
-                        clx.add_turtle(Turtle::RotTrans(rot));
-                    },
-                    "rot_ctx" => {
-                        getOpIn!(a1, rot);
-                        clx.add_turtle(Turtle::RotCtx(rot));
+                        clx.add_turtle(Turtle::Rot(rot));
                     },
                     "rect" => {
                         getOpIn!(a1, w);
@@ -698,14 +689,10 @@ pub fn main() -> Result<(), String> {
             clear([0.1; 4], graphics);
 
             let mut rot_ctx = 0.0;
-            let mut tx = 100.0;
-            let mut ty = 100.0;
             let mut tw = 200.0;
             let mut th = 200.0;
-            let mut transf = context.transform;
+            let mut transf = context.transform.clone();
             t.exec(
-                &mut tx,
-                &mut ty,
                 &mut tw,
                 &mut th,
                 &mut rot_ctx,
