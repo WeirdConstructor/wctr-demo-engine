@@ -281,7 +281,10 @@ pub enum OpIn {
     Constant(f32),
     Reg(usize),
     RegMix2(usize, usize, f32),
+    RegAdd(usize,f32),
     RegMul(usize,f32),
+    RegAddMul(usize,f32,f32),
+    RegMulAdd(usize,f32,f32),
     RegLerp(usize,f32,f32),
     RegSStep(usize,f32,f32),
     RegMap(usize,f32,f32,f32,f32),
@@ -299,6 +302,13 @@ pub enum Turtle {
     Line(OpIn, OpIn, OpIn),
 }
 
+struct TurtleState {
+    w:          f64,
+    h:          f64,
+    dir:        [f64; 2],
+    transf:     [[f64; 3]; 2],
+}
+
 impl Turtle {
     fn exec<T>(&self, w: &mut f64, h: &mut f64, rot_ctx: &mut f64, transf: &mut [[f64; 3]; 2], regs: &[f32], context: &piston_window::Context, graphics: &mut T)
         where T: piston_window::Graphics {
@@ -309,6 +319,13 @@ impl Turtle {
                 }
             },
             Turtle::Area((taw, tah), bt) => {
+                //
+                // turtle:
+                //      look_dir x y
+                //      rot_dir rad
+                //      walk_dir n
+                //      line_dir n thickness color
+                //
             },
             Turtle::TransInit => {
                 *transf = context.transform.clone();
@@ -347,7 +364,10 @@ impl OpIn {
             OpIn::Constant(v)            => *v,
             OpIn::Reg(i)                 => regs[*i],
             OpIn::RegMix2(ia, ib, am)    => regs[*ia] * am + regs[*ib] * (1.0 - am),
+            OpIn::RegAdd(i, v)           => v + regs[*i],
             OpIn::RegMul(i, v)           => v * regs[*i],
+            OpIn::RegAddMul(i, a, v)     => v * (regs[*i] + a),
+            OpIn::RegMulAdd(i, v, a)     => (v * regs[*i]) + a,
             OpIn::RegLerp(i, a, b)       => (a * regs[*i]) + (b * (1.0 - regs[*i])),
             OpIn::RegSStep(i, a, b)      => {
                 let x = (regs[*i] - a) / (b - a);
@@ -378,9 +398,20 @@ impl OpIn {
                             v.at(1).unwrap_or(VVal::Nul).i() as usize,
                             v.at(2).unwrap_or(VVal::Nul).i() as usize,
                             v.at(3).unwrap_or(VVal::Nul).f() as f32)),
+                "add"  => Some(OpIn::RegAdd(
+                            v.at(1).unwrap_or(VVal::Nul).i() as usize,
+                            v.at(2).unwrap_or(VVal::Nul).f() as f32)),
                 "mul"  => Some(OpIn::RegMul(
                             v.at(1).unwrap_or(VVal::Nul).i() as usize,
                             v.at(2).unwrap_or(VVal::Nul).f() as f32)),
+                "addmul"  => Some(OpIn::RegAddMul(
+                            v.at(1).unwrap_or(VVal::Nul).i() as usize,
+                            v.at(2).unwrap_or(VVal::Nul).f() as f32,
+                            v.at(3).unwrap_or(VVal::Nul).f() as f32)),
+                "muladd"  => Some(OpIn::RegMulAdd(
+                            v.at(1).unwrap_or(VVal::Nul).i() as usize,
+                            v.at(2).unwrap_or(VVal::Nul).f() as f32,
+                            v.at(3).unwrap_or(VVal::Nul).f() as f32)),
                 "lerp" => Some(OpIn::RegLerp(
                             v.at(1).unwrap_or(VVal::Nul).i() as usize,
                             v.at(2).unwrap_or(VVal::Nul).f() as f32,
