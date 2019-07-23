@@ -9,6 +9,7 @@ palette = "0.2"
 chrono = "0.4.6"
 piston2d-graphics = "0.32.0"
 piston_window = "0.98.0"
+vecmath = "1.0.0"
 wlambda= { path = "../wlambda" }
 
 #[dependencies.sdl2]
