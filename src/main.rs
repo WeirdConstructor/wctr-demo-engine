@@ -12,7 +12,23 @@ use std::cell::RefCell;
 use std::time::{Instant};
 use wlambda;
 use wlambda::vval::VVal;
+use vecmath;
 
+/* TODO:
+
+    X use turtle state
+    X implement turtle color
+    - implement turtle vector direction
+    - implement turtle line drawing
+    - check out filemanager project GUI for possible
+      utilization as tracker.
+    - implement gradient Op with 4 outputs
+    - implement layered noise buffer using xorshift crate,
+      which can be sampled by register accesses
+        - implement textured rects and possibly display the noise buffer.
+
+
+*/
 /*
 
 Design ideas:
@@ -290,6 +306,34 @@ pub enum OpIn {
     RegMap(usize,f32,f32,f32,f32),
 }
 
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct ColorIn {
+    pub h:  OpIn,
+    pub s:  OpIn,
+    pub v:  OpIn,
+    pub a:  OpIn,
+}
+
+impl ColorIn {
+    fn calc(&self, regs: &[f32]) -> [f32; 4] {
+        extern crate palette;
+        use palette::{Rgb};
+        let hue : palette::Hsv =
+            palette::Hsv::new(
+                self.h.calc(regs).into(),
+                self.s.calc(regs),
+                self.v.calc(regs));
+        let rc : Rgb = hue.into();
+
+        [
+            rc.red,
+            rc.green,
+            rc.blue,
+            self.a.calc(regs)
+        ]
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Turtle {
     Commands(Vec<Turtle>),
@@ -298,27 +342,33 @@ pub enum Turtle {
     TransInit,
     Move(OpIn, OpIn),
     Area((OpIn, OpIn), Box<Turtle>),
-    Rect(OpIn, OpIn),
-    Line(OpIn, OpIn, OpIn),
+    Rect(OpIn, OpIn, ColorIn),
+    Line(OpIn, OpIn, ColorIn),
 }
 
 struct TurtleState {
     w:          f64,
     h:          f64,
+    pos:        [f64; 2],
     dir:        [f64; 2],
     transf:     [[f64; 3]; 2],
+//    color:      [f32; 4],
 }
 
 impl Turtle {
-    fn exec<T>(&self, w: &mut f64, h: &mut f64, rot_ctx: &mut f64, transf: &mut [[f64; 3]; 2], regs: &[f32], context: &piston_window::Context, graphics: &mut T)
+    fn exec<T>(&self,
+               ts: &mut TurtleState,
+               regs: &[f32],
+               context: &piston_window::Context,
+               graphics: &mut T)
         where T: piston_window::Graphics {
         match self {
             Turtle::Commands(v) => {
                 for c in v.iter() {
-                    c.exec(w, h, rot_ctx, transf, regs, context, graphics);
+                    c.exec(ts, regs, context, graphics);
                 }
             },
-            Turtle::Area((taw, tah), bt) => {
+            Turtle::Area((_taw, _tah), _bt) => {
                 //
                 // turtle:
                 //      look_dir x y
@@ -328,29 +378,51 @@ impl Turtle {
                 //
             },
             Turtle::TransInit => {
-                *transf = context.transform.clone();
+                ts.transf = context.transform.clone();
             },
             Turtle::Move(xo, yo) => {
-                let x = xo.calc(regs) as f64 * *w;
-                let y = yo.calc(regs) as f64 * *h;
-//                println!("TRANS {:?}", *transf);
-                *transf = (*transf).trans(x, y);
-//                println!("TRANS AM {:?}", *transf);
+                let x = xo.calc(regs) as f64 * ts.w;
+                let y = yo.calc(regs) as f64 * ts.h;
+                ts.transf = (ts.transf).trans(x, y);
             },
             Turtle::Rot(rot) => {
                 let rot = rot.calc(regs) as f64;
-                *transf = (*transf).rot_rad(rot);
-//                println!("TRANS {:?}", *transf);
-                *rot_ctx += rot;
-//                println!("TRANS ROT {:?}", *transf);
+                ts.transf = (ts.transf).rot_rad(rot);
             },
-            Turtle::Rect(rw, rh) => {
-                let wh = ((rw.calc(regs) * *w as f32) / 2.0) as f64;
-                let hh = ((rh.calc(regs) * *h as f32) / 2.0) as f64;
-                //d// println!("WW {:?} {:?} | {} {} {} {}", rw, rh, wh, hh, x, y);
-                rectangle([1.0, 1.0, 1.0,  1.0],
-                          [-wh, -hh, wh * 2.0, hh * 2.0],
-                          (*transf), graphics); // .trans(*x, *y).rot_rad(*rot_ctx), graphics);
+            Turtle::Dir(x, y) => {
+                let x = x.calc(regs);
+                let y = y.calc(regs);
+                ts.dir = [x as f64, y as f64];
+                ts.dir = vecmath::vec2_normalized(ts.dir);
+            },
+            Turtle::Line(n, thick, color) => {
+                let n     = n.calc(regs);
+                let t     = thick.calc(regs);
+                let color = color.calc(regs);
+                let mut new_pos = vecmath::vec2_scale(ts.dir, n as f64);
+                new_pos[0] = ts.pos[0] + new_pos[0] * ts.w;
+                new_pos[1] = ts.pos[1] + new_pos[1] * ts.h;
+                use piston_window::Ellipse;
+                let o = Ellipse::new(color);
+                o.draw(
+                    ellipse::circle(ts.pos[0], ts.pos[1], t.into()),
+                    &context.draw_state, ts.transf, graphics);
+                o.draw(
+                    ellipse::circle(new_pos[0], new_pos[1], t.into()),
+                    &context.draw_state, ts.transf, graphics);
+                line_from_to(
+                    color, t.into(), ts.pos, new_pos, ts.transf, graphics);
+                ts.pos = new_pos;
+            },
+            Turtle::Rect(rw, rh, clr) => {
+                let wh = ((rw.calc(regs) * ts.w as f32) / 2.0) as f64;
+                let hh = ((rh.calc(regs) * ts.h as f32) / 2.0) as f64;
+                let c = clr.calc(regs);
+                rectangle(
+                    c,
+                    [-wh, -hh, wh * 2.0, hh * 2.0],
+                    ts.transf,
+                    graphics);
                 ()
             },
             _ => (),
@@ -507,7 +579,7 @@ struct Simulator {
 struct ClContext {
     sim: Simulator,
     cur_turtle_cmds: Vec<Turtle>,
-    turtle_stack:    Vec<Turtle>,
+//    turtle_stack:    Vec<Turtle>,
 }
 
 impl ClContext {
@@ -574,6 +646,47 @@ macro_rules! getOpIn {
     }
 }
 
+macro_rules! getColorIn {
+    ($arg: ident, $o: ident) => {
+        let v = $arg.clone();
+        if !v.is_vec() {
+            return Ok(VVal::err_msg(
+                &format!("Bad color argument '{}'", $arg.s())));
+        }
+
+        let $o = ColorIn {
+            h: if let Some(o) = OpIn::vv2opin(v.at(0).unwrap_or(VVal::Nul)) {
+                o
+            } else {
+                return Ok(VVal::err_msg(
+                    &format!("Bad register '{}'",
+                             v.at(0).unwrap_or(VVal::Nul).s())));
+            },
+            s: if let Some(o) = OpIn::vv2opin(v.at(1).unwrap_or(VVal::Nul)) {
+                o
+            } else {
+                return Ok(VVal::err_msg(
+                    &format!("Bad register '{}'",
+                             v.at(1).unwrap_or(VVal::Nul).s())));
+            },
+            v: if let Some(o) = OpIn::vv2opin(v.at(2).unwrap_or(VVal::Nul)) {
+                o
+            } else {
+                return Ok(VVal::err_msg(
+                    &format!("Bad register '{}'",
+                             v.at(2).unwrap_or(VVal::Nul).s())));
+            },
+            a: if let Some(o) = OpIn::vv2opin(v.at(3).unwrap_or(VVal::Nul)) {
+                o
+            } else {
+                return Ok(VVal::err_msg(
+                    &format!("Bad register '{}'",
+                             v.at(3).unwrap_or(VVal::Nul).s())));
+            },
+        };
+    }
+}
+
 pub fn main() -> Result<(), String> {
     use wlambda::prelude::create_wlamba_prelude;
     use wlambda::vval::{Env};
@@ -584,7 +697,7 @@ pub fn main() -> Result<(), String> {
             regs: Vec::new(),
         },
         cur_turtle_cmds: Vec::new(),
-        turtle_stack:    Vec::new(),
+//        turtle_stack:    Vec::new(),
     }));
 
     let global_env = create_wlamba_prelude();
@@ -622,10 +735,25 @@ pub fn main() -> Result<(), String> {
                         getOpIn!(a1, rot);
                         clx.add_turtle(Turtle::Rot(rot));
                     },
+                    "dir" => {
+                        getOpIn!(a1, x);
+                        getOpIn!(a2, y);
+
+                        clx.add_turtle(Turtle::Dir(x, y));
+                    },
+                    "line" => {
+                        getOpIn!(a1, n);
+                        getOpIn!(a2, t);
+                        getColorIn!(a3, clr);
+
+                        clx.add_turtle(Turtle::Line(n, t, clr));
+                    },
                     "rect" => {
                         getOpIn!(a1, w);
                         getOpIn!(a2, h);
-                        clx.add_turtle(Turtle::Rect(w, h));
+                        getColorIn!(a3, clr);
+
+                        clx.add_turtle(Turtle::Rect(w, h, clr));
                     },
                     _ => {
                         return Ok(VVal::err_msg(
@@ -698,17 +826,31 @@ pub fn main() -> Result<(), String> {
             extern crate palette;
             use palette::{Rgb};
 
+            let b = Instant::now();
+
             let now_time = start_time.elapsed().as_millis();
             let r = ctx.call(
                 &draw_cb,
                 &vec![VVal::Int(now_time as i64)]).unwrap();
             let hue : palette::Hsv =
                 palette::Hsv::new((r.f() as f32).into(), 1.0, 1.0);
-            let rc : Rgb = hue.into();
+            let _rc : Rgb = hue.into();
 
-            let b = Instant::now();
             clctx.borrow_mut().exec(now_time as f32);
             let t = clctx.borrow_mut().cur_turtle_cmds[0].clone();
+
+            clear([0.1; 4], graphics);
+
+            let mut ts = TurtleState {
+                w:      200.0,
+                h:      200.0,
+                dir:    [1.0, 0.0],
+                pos:    [0.0, 0.0],
+                transf: context.transform.clone(),
+//                color:  [1.0, 0.0, 1.0, 1.0],
+            };
+            t.exec(&mut ts, &clctx.borrow().sim.regs, &context, graphics);
+
             avg += b.elapsed().as_millis();
             cnt += 1;
             if cnt > 100 {
@@ -716,21 +858,6 @@ pub fn main() -> Result<(), String> {
                 cnt = 0;
                 avg = 0;
             }
-
-            clear([0.1; 4], graphics);
-
-            let mut rot_ctx = 0.0;
-            let mut tw = 200.0;
-            let mut th = 200.0;
-            let mut transf = context.transform.clone();
-            t.exec(
-                &mut tw,
-                &mut th,
-                &mut rot_ctx,
-                &mut transf,
-                &clctx.borrow().sim.regs,
-                &context,
-                graphics);
 
             // Turtle:
             //      color   (3 arbitrary OpIn regs: hsv)
