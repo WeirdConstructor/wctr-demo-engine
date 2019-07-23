@@ -1,17 +1,16 @@
 [package]
-name = "wcdemengine"
+name    = "wcdemengine"
 version = "0.1.0"
 authors = ["Weird Constructor <weirdconstructor@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-palette = "0.2"
-chrono = "0.4.6"
-piston2d-graphics = "0.32.0"
-piston_window = "0.98.0"
-vecmath = "1.0.0"
-wlambda= { path = "../wlambda" }
-vecmath = "1.0.0"
+palette            = "0.2"
+chrono             = "0.4.6"
+piston2d-graphics  = "0.32.0"
+piston_window      = "0.98.0"
+wlambda            = { path = "../wlambda" }
+vecmath            = "1.0.0"
 
 #[dependencies.sdl2]
 #version="0.32"
@@ -21,8 +20,8 @@ vecmath = "1.0.0"
 ##,"mixer"]
 
 [profile.release]
-panic = "abort"
-lto = true
+panic         = "abort"
+lto           = true
 codegen-units = 1
-incremental = false
-opt-level = "z"
+incremental   = false
+opt-level     = "z"

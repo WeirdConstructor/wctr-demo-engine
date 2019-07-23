@@ -338,9 +338,9 @@ impl ColorIn {
 pub enum Turtle {
     Commands(Vec<Turtle>),
     Dir(OpIn, OpIn),
-    Rot(OpIn),
+    RotTrans(OpIn),
     TransInit,
-    Move(OpIn, OpIn),
+    Translate(OpIn, OpIn),
     Area((OpIn, OpIn), Box<Turtle>),
     Rect(OpIn, OpIn, ColorIn),
     Line(OpIn, OpIn, ColorIn),
@@ -351,7 +351,8 @@ struct TurtleState {
     h:          f64,
     pos:        [f64; 2],
     dir:        [f64; 2],
-    transf:     [[f64; 3]; 2],
+    trans:      [[f64; 3]; 2],
+    init_trans: [[f64; 3]; 2],
 //    color:      [f32; 4],
 }
 
@@ -378,16 +379,16 @@ impl Turtle {
                 //
             },
             Turtle::TransInit => {
-                ts.transf = context.transform.clone();
+                ts.trans = ts.init_trans;
             },
-            Turtle::Move(xo, yo) => {
+            Turtle::Translate(xo, yo) => {
                 let x = xo.calc(regs) as f64 * ts.w;
                 let y = yo.calc(regs) as f64 * ts.h;
-                ts.transf = (ts.transf).trans(x, y);
+                ts.trans = (ts.trans).trans(x, y);
             },
-            Turtle::Rot(rot) => {
+            Turtle::RotTrans(rot) => {
                 let rot = rot.calc(regs) as f64;
-                ts.transf = (ts.transf).rot_rad(rot);
+                ts.trans = (ts.trans).rot_rad(rot);
             },
             Turtle::Dir(x, y) => {
                 let x = x.calc(regs);
@@ -402,16 +403,15 @@ impl Turtle {
                 let mut new_pos = vecmath::vec2_scale(ts.dir, n as f64);
                 new_pos[0] = ts.pos[0] + new_pos[0] * ts.w;
                 new_pos[1] = ts.pos[1] + new_pos[1] * ts.h;
-                use piston_window::Ellipse;
                 let o = Ellipse::new(color);
                 o.draw(
                     ellipse::circle(ts.pos[0], ts.pos[1], t.into()),
-                    &context.draw_state, ts.transf, graphics);
+                    &context.draw_state, ts.trans, graphics);
                 o.draw(
                     ellipse::circle(new_pos[0], new_pos[1], t.into()),
-                    &context.draw_state, ts.transf, graphics);
+                    &context.draw_state, ts.trans, graphics);
                 line_from_to(
-                    color, t.into(), ts.pos, new_pos, ts.transf, graphics);
+                    color, t.into(), ts.pos, new_pos, ts.trans, graphics);
                 ts.pos = new_pos;
             },
             Turtle::Rect(rw, rh, clr) => {
@@ -421,11 +421,10 @@ impl Turtle {
                 rectangle(
                     c,
                     [-wh, -hh, wh * 2.0, hh * 2.0],
-                    ts.transf,
+                    ts.trans,
                     graphics);
                 ()
             },
-            _ => (),
         }
     }
 }
@@ -726,14 +725,14 @@ pub fn main() -> Result<(), String> {
                     "trans_init" => {
                         clx.add_turtle(Turtle::TransInit);
                     },
-                    "move" => {
+                    "translate" => {
                         getOpIn!(a1, xo);
                         getOpIn!(a2, yo);
-                        clx.add_turtle(Turtle::Move(xo, yo));
+                        clx.add_turtle(Turtle::Translate(xo, yo));
                     },
-                    "rot" => {
+                    "rot_trans" => {
                         getOpIn!(a1, rot);
-                        clx.add_turtle(Turtle::Rot(rot));
+                        clx.add_turtle(Turtle::RotTrans(rot));
                     },
                     "dir" => {
                         getOpIn!(a1, x);
@@ -822,6 +821,8 @@ pub fn main() -> Result<(), String> {
 
     let start_time = Instant::now();
     while let Some(event) = window.next() {
+        let ws = window.draw_size();
+
         window.draw_2d(&event, |context, graphics, _device| {
             extern crate palette;
             use palette::{Rgb};
@@ -841,13 +842,20 @@ pub fn main() -> Result<(), String> {
 
             clear([0.1; 4], graphics);
 
+            let scale_size = 200.0;
+
+            let trans =
+                context.transform.trans(
+                    ws.width  / 2.0, //- scale_size / 2.0,
+                    ws.height / 2.0); //- scale_size / 2.0);
+
             let mut ts = TurtleState {
-                w:      200.0,
-                h:      200.0,
+                w:      scale_size,
+                h:      scale_size,
                 dir:    [1.0, 0.0],
                 pos:    [0.0, 0.0],
-                transf: context.transform.clone(),
-//                color:  [1.0, 0.0, 1.0, 1.0],
+                init_trans: trans,
+                trans: trans,
             };
             t.exec(&mut ts, &clctx.borrow().sim.regs, &context, graphics);
 

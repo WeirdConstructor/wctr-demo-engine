@@ -37,32 +37,43 @@ displayln "SIN: " outreg;
 !clr2 = $[$[:mul, outreg, 2000.0], 1.0, 1.0, 1.0];
 !clr3 = $[$[:mul, outreg, 100.0], 1.0, 1.0, 1.0];
 
-t :move 1 1;
+!cborder = $[0.0, 1.0, 1.0, 1.0];
+t :translate -0.5 -0.5;
+t :rect 0.1 0.1 cborder;
+t :line 1 0.5 cborder;
+t :translate 1.0  0.0;
+t :rect 0.1 0.1 cborder;
+t :translate 0.0  1.0;
+t :rect 0.1 0.1 cborder;
+t :translate -1.0 0;
+t :rect 0.1 0.1 cborder;
+t :trans_init;
+#t :translate 1 1;
 t :rect
   $[:mul, outreg, 0.2]
   $[:reg, outreg, 0.3]
   clr;
 #t :trans_init;
-#t :rot $[:reg, outreg, 1];
-t :move 0.4 0;
+#t :rot_trans $[:reg, outreg, 1];
+t :translate 0.4 0;
 t :rect $[:mul, outreg, 0.1] $[:mul, outreg, 0.1] clr2;
-t :move [-0.8] 0;
-t :rot $[:reg, outreg, 3.146];
+t :translate [-0.8] 0;
+t :rot_trans $[:reg, outreg, 3.146];
 t :rect $[:mul, outreg, 0.2] $[:mul, outreg, 0.2] clr3;
 t :line 1 $[:map, outreg, -1, 1, 2, 4] clr3;
 t :dir 0 1;
 t :line 0.2 $[:map, outreg, -1, 1, 2, 4] clr3;
 t :dir $[:reg, outreg] 1;
 t :line 0.2 $[:map, outreg, -1, 1, 0.1, 60] clr3;
-#t :rot_ctx $[:mul, outreg, 3.14 * 3];
+#t :rot_trans $[:mul, outreg, 3.14 * 3];
 #t :rect
-#t :move 1 0;
-#t :rot_ctx $[:mul, outreg, 3.14 * 10];
-#t :move 0.1 0.1;
+#t :translate 1 0;
+#t :rot_trans $[:mul, outreg, 3.14 * 10];
+#t :translate 0.1 0.1;
 #t :rect
 #  $[:mul, outreg, 0.1]
 #  $[:reg, outreg, 0.1];
-#t :move 0.3 0.3;
+#t :translate 0.3 0.3;
 #t :rect
 #  $[:mul, outreg, 0.1]
 #  $[:reg, outreg, 0.1];
