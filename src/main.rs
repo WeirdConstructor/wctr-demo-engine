@@ -337,15 +337,17 @@ impl ColorIn {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Turtle {
     Commands(Vec<Turtle>),
-    Dir(OpIn, OpIn),
-    RotTrans(OpIn),
-    TransInit,
-    Translate(OpIn, OpIn),
+    LookDir(OpIn, OpIn),
+    WithState(Box<Turtle>),
     Area((OpIn, OpIn), Box<Turtle>),
     Rect(OpIn, OpIn, ColorIn),
     Line(OpIn, OpIn, ColorIn),
+    CtxInit,
+    CtxMove(OpIn, OpIn),
+    CtxRot(OpIn),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 struct TurtleState {
     w:          f64,
     h:          f64,
@@ -369,6 +371,10 @@ impl Turtle {
                     c.exec(ts, regs, context, graphics);
                 }
             },
+            Turtle::WithState(cmds) => {
+                let mut sub_ts = ts.clone();
+                cmds.exec(&mut sub_ts, regs, context, graphics);
+            },
             Turtle::Area((_taw, _tah), _bt) => {
                 //
                 // turtle:
@@ -378,19 +384,19 @@ impl Turtle {
                 //      line_dir n thickness color
                 //
             },
-            Turtle::TransInit => {
+            Turtle::CtxInit => {
                 ts.trans = ts.init_trans;
             },
-            Turtle::Translate(xo, yo) => {
+            Turtle::CtxMove(xo, yo) => {
                 let x = xo.calc(regs) as f64 * ts.w;
                 let y = yo.calc(regs) as f64 * ts.h;
                 ts.trans = (ts.trans).trans(x, y);
             },
-            Turtle::RotTrans(rot) => {
+            Turtle::CtxRot(rot) => {
                 let rot = rot.calc(regs) as f64;
                 ts.trans = (ts.trans).rot_rad(rot);
             },
-            Turtle::Dir(x, y) => {
+            Turtle::LookDir(x, y) => {
                 let x = x.calc(regs);
                 let y = y.calc(regs);
                 ts.dir = [x as f64, y as f64];
@@ -578,7 +584,7 @@ struct Simulator {
 struct ClContext {
     sim: Simulator,
     cur_turtle_cmds: Vec<Turtle>,
-//    turtle_stack:    Vec<Turtle>,
+    turtle_stack:    Vec<Vec<Turtle>>,
 }
 
 impl ClContext {
@@ -632,6 +638,17 @@ impl ClContext {
     fn add_turtle(&mut self, t: Turtle) {
         println!("ADD TURTLE: {:?}", t);
         self.cur_turtle_cmds.push(t);
+    }
+
+    fn push_turtle(&mut self) {
+        self.turtle_stack.push(
+            std::mem::replace(&mut self.cur_turtle_cmds, Vec::new()));
+    }
+
+    fn pop_turtle(&mut self) -> Turtle {
+        let prev_t = self.turtle_stack.pop().unwrap();
+        Turtle::Commands(
+            std::mem::replace(&mut self.cur_turtle_cmds, prev_t))
     }
 }
 
@@ -696,7 +713,7 @@ pub fn main() -> Result<(), String> {
             regs: Vec::new(),
         },
         cur_turtle_cmds: Vec::new(),
-//        turtle_stack:    Vec::new(),
+        turtle_stack:    Vec::new(),
     }));
 
     let global_env = create_wlamba_prelude();
@@ -708,12 +725,11 @@ pub fn main() -> Result<(), String> {
             let a2 = env.arg(2).clone();
             let a3 = env.arg(3).clone();
 
-            env.with_user_do(|clx: &mut ClContext| {
-                match &node_type[..] {
-                    "cmds" => {
-                        clx.pack_turtle();
-                    },
-                    // TODO!
+            match &node_type[..] {
+                "cmds" => {
+                    env.with_user_do(|clx: &mut ClContext| clx.pack_turtle());
+                },
+                // TODO!
 //                    "area" => {
 //                        getOpIn!(a1, aw);
 //                        getOpIn!(a2, ah);
@@ -722,46 +738,64 @@ pub fn main() -> Result<(), String> {
 //                        clx.add_turtle(Turtle::Area((aw, ah), t));
 //                    },
 //                  "
-                    "trans_init" => {
-                        clx.add_turtle(Turtle::TransInit);
-                    },
-                    "translate" => {
-                        getOpIn!(a1, xo);
-                        getOpIn!(a2, yo);
-                        clx.add_turtle(Turtle::Translate(xo, yo));
-                    },
-                    "rot_trans" => {
-                        getOpIn!(a1, rot);
-                        clx.add_turtle(Turtle::RotTrans(rot));
-                    },
-                    "dir" => {
-                        getOpIn!(a1, x);
-                        getOpIn!(a2, y);
-
-                        clx.add_turtle(Turtle::Dir(x, y));
-                    },
-                    "line" => {
-                        getOpIn!(a1, n);
-                        getOpIn!(a2, t);
-                        getColorIn!(a3, clr);
-
-                        clx.add_turtle(Turtle::Line(n, t, clr));
-                    },
-                    "rect" => {
-                        getOpIn!(a1, w);
-                        getOpIn!(a2, h);
-                        getColorIn!(a3, clr);
-
-                        clx.add_turtle(Turtle::Rect(w, h, clr));
-                    },
-                    _ => {
-                        return Ok(VVal::err_msg(
-                            &format!("Bad turtle type '{}'", node_type)))
+                "c_init" => {
+                    env.with_user_do(|clx: &mut ClContext|
+                        clx.add_turtle(Turtle::CtxInit));
+                },
+                "with_state" => {
+                    env.with_user_do(|clx: &mut ClContext|
+                        clx.push_turtle());
+                    match a1.call_no_args(env) {
+                        Ok(_v) => {
+                            env.with_user_do(|clx: &mut ClContext| {
+                                let t = Turtle::WithState(Box::new(clx.pop_turtle()));
+                                clx.add_turtle(t);
+                            });
+                        },
+                        Err(e) => return Err(e),
                     }
-                }
+                },
+                "c_move" => {
+                    getOpIn!(a1, xo);
+                    getOpIn!(a2, yo);
+                    env.with_user_do(|clx: &mut ClContext|
+                        clx.add_turtle(Turtle::CtxMove(xo, yo)));
+                },
+                "c_rot" => {
+                    getOpIn!(a1, rot);
+                    env.with_user_do(|clx: &mut ClContext|
+                        clx.add_turtle(Turtle::CtxRot(rot)));
+                },
+                "look_dir" => {
+                    getOpIn!(a1, x);
+                    getOpIn!(a2, y);
 
-                Ok(VVal::Bol(true))
-            })
+                    env.with_user_do(|clx: &mut ClContext|
+                        clx.add_turtle(Turtle::LookDir(x, y)));
+                },
+                "line" => {
+                    getOpIn!(a1, n);
+                    getOpIn!(a2, t);
+                    getColorIn!(a3, clr);
+
+                    env.with_user_do(|clx: &mut ClContext|
+                        clx.add_turtle(Turtle::Line(n, t, clr)));
+                },
+                "rect" => {
+                    getOpIn!(a1, w);
+                    getOpIn!(a2, h);
+                    getColorIn!(a3, clr);
+
+                    env.with_user_do(|clx: &mut ClContext|
+                        clx.add_turtle(Turtle::Rect(w, h, clr)));
+                },
+                _ => {
+                    return Ok(VVal::err_msg(
+                        &format!("Bad turtle type '{}'", node_type)))
+                }
+            }
+
+            Ok(VVal::Bol(true))
         }, Some(1), None);
 
     global_env.borrow_mut().add_func(

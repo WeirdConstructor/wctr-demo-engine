@@ -38,45 +38,39 @@ displayln "SIN: " outreg;
 !clr3 = $[$[:mul, outreg, 100.0], 1.0, 1.0, 1.0];
 
 !cborder = $[0.0, 1.0, 1.0, 1.0];
-t :translate -0.5 -0.5;
-t :rect 0.1 0.1 cborder;
-t :line 1 0.5 cborder;
-t :translate 1.0  0.0;
-t :rect 0.1 0.1 cborder;
-t :translate 0.0  1.0;
-t :rect 0.1 0.1 cborder;
-t :translate -1.0 0;
-t :rect 0.1 0.1 cborder;
-t :trans_init;
-#t :translate 1 1;
+t :with_state {
+    t :c_move -0.5 -0.5;
+    t :rect 0.1 0.1 cborder;
+    t :line 1 0.5 cborder;
+    t :c_move 1.0  0.0;
+    t :rect 0.1 0.1 cborder;
+    t :c_move 0.0  1.0;
+    t :rect 0.1 0.1 cborder;
+    t :c_move -1.0 0;
+    t :rect 0.1 0.1 cborder;
+};
+
+# middle box
 t :rect
   $[:mul, outreg, 0.2]
   $[:reg, outreg, 0.3]
   clr;
-#t :trans_init;
-#t :rot_trans $[:reg, outreg, 1];
-t :translate 0.4 0;
+
+# right small fast blinking rect
+t :c_move 0.4 0;
 t :rect $[:mul, outreg, 0.1] $[:mul, outreg, 0.1] clr2;
-t :translate [-0.8] 0;
-t :rot_trans $[:reg, outreg, 3.146];
+
+# Left arm
+t :c_move -0.8 0;
+t :c_move $[:reg, outreg, 3.146];
+t :c_rot $[:reg, outreg, 3.146];
 t :rect $[:mul, outreg, 0.2] $[:mul, outreg, 0.2] clr3;
 t :line 1 $[:map, outreg, -1, 1, 2, 4] clr3;
-t :dir 0 1;
+t :look_dir 0 1;
 t :line 0.2 $[:map, outreg, -1, 1, 2, 4] clr3;
-t :dir $[:reg, outreg] 1;
+t :look_dir $[:reg, outreg] 1;
 t :line 0.2 $[:map, outreg, -1, 1, 0.1, 60] clr3;
-#t :rot_trans $[:mul, outreg, 3.14 * 3];
-#t :rect
-#t :translate 1 0;
-#t :rot_trans $[:mul, outreg, 3.14 * 10];
-#t :translate 0.1 0.1;
-#t :rect
-#  $[:mul, outreg, 0.1]
-#  $[:reg, outreg, 0.1];
-#t :translate 0.3 0.3;
-#t :rect
-#  $[:mul, outreg, 0.1]
-#  $[:reg, outreg, 0.1];
+
 t :cmds;
 
 !:global draw = {|1|
