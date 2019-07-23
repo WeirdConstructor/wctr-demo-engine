@@ -846,8 +846,8 @@ pub fn main() -> Result<(), String> {
 
             let trans =
                 context.transform.trans(
-                    ws.width  / 2.0, //- scale_size / 2.0,
-                    ws.height / 2.0); //- scale_size / 2.0);
+                    ws.width  / 2.0,   //- scale_size / 2.0,
+                    ws.height / 2.0);  //- scale_size / 2.0);
 
             let mut ts = TurtleState {
                 w:      scale_size,
