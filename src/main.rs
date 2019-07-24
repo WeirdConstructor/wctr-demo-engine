@@ -845,9 +845,12 @@ pub fn main() -> Result<(), String> {
         panic!("script did not setup a global draw() function!");
     }
 
+    let opengl = OpenGL::V3_2;
     let mut window: PistonWindow =
         WindowSettings::new("Hello Piston!", [640, 480])
+        .graphics_api(opengl)
         .resizable(true)
+        .vsync(true)
         .exit_on_esc(true).build().unwrap();
 
     let mut cnt = 0;
