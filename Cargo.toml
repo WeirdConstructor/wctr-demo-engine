@@ -11,6 +11,8 @@ piston2d-graphics  = "0.32.0"
 piston_window      = "0.98.0"
 wlambda            = { path = "../wlambda" }
 vecmath            = "1.0.0"
+nalgebra           = "0.18.0"
+mint               = "0.5.1"
 
 #[dependencies.sdl2]
 #version="0.32"

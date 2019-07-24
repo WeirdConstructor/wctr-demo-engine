@@ -1,14 +1,21 @@
+use vecmath;
+use crate::signals::OpIn;
+use crate::signals::ColorIn;
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Turtle {
     Commands(Vec<Turtle>),
     LookDir(OpIn, OpIn),
     WithState(Box<Turtle>),
-    Area((OpIn, OpIn), Box<Turtle>),
     Rect(OpIn, OpIn, ColorIn),
     Line(OpIn, OpIn, ColorIn),
-    CtxInit,
-    CtxMove(OpIn, OpIn),
-    CtxRot(OpIn),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ShapeRotation {
+    LeftBottom(f32),
+    TopRight(f32),
+    Center(f32),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -17,53 +24,28 @@ pub struct TurtleState {
     h:          f64,
     pos:        [f64; 2],
     dir:        [f64; 2],
-    trans:      [[f64; 3]; 2],
-    init_trans: [[f64; 3]; 2],
-//    color:      [f32; 4],
 }
 
 trait TurtleDrawing {
-    fn draw_line(color: [f32; 4], transformation: matrix, from: [f32; 2], to: [f32; 2], thickness: f32);
-    fn draw_rect_fill(color: [f32; 4], transformation: matrix, pos: [f32; 2], size: [f32; 2]);
+    fn draw_line(color: [f32; 4], rot: ShapeRotation, from: [f32; 2], to: [f32; 2], thickness: f32);
+    fn draw_rect_fill(color: [f32; 4], rot: ShapeRotation, pos: [f32; 2], size: [f32; 2]);
 }
 
 impl Turtle {
     pub fn exec<T>(&self,
                ts: &mut TurtleState,
                regs: &[f32],
-               context: &piston_window::Context,
-               graphics: &mut T)
-        where T: piston_window::Graphics {
+               ctx: T)
+        where T: TurtleDrawing {
         match self {
             Turtle::Commands(v) => {
                 for c in v.iter() {
-                    c.exec(ts, regs, context, graphics);
+                    c.exec(ts, regs, ctx);
                 }
             },
             Turtle::WithState(cmds) => {
                 let mut sub_ts = ts.clone();
-                cmds.exec(&mut sub_ts, regs, context, graphics);
-            },
-            Turtle::Area((_taw, _tah), _bt) => {
-                //
-                // turtle:
-                //      look_dir x y
-                //      rot_dir rad
-                //      walk_dir n
-                //      line_dir n thickness color
-                //
-            },
-            Turtle::CtxInit => {
-                ts.trans = ts.init_trans;
-            },
-            Turtle::CtxMove(xo, yo) => {
-                let x = xo.calc(regs) as f64 * ts.w;
-                let y = yo.calc(regs) as f64 * ts.h;
-                ts.trans = (ts.trans).trans(x, y);
-            },
-            Turtle::CtxRot(rot) => {
-                let rot = rot.calc(regs) as f64;
-                ts.trans = (ts.trans).rot_rad(rot);
+                cmds.exec(&mut sub_ts, regs, ctx);
             },
             Turtle::LookDir(x, y) => {
                 let x = x.calc(regs);
@@ -78,27 +60,24 @@ impl Turtle {
                 let mut new_pos = vecmath::vec2_scale(ts.dir, n as f64);
                 new_pos[0] = ts.pos[0] + new_pos[0] * ts.w;
                 new_pos[1] = ts.pos[1] + new_pos[1] * ts.h;
-                let o = Ellipse::new(color);
-                o.draw(
-                    ellipse::circle(ts.pos[0], ts.pos[1], t.into()),
-                    &context.draw_state, ts.trans, graphics);
-                o.draw(
-                    ellipse::circle(new_pos[0], new_pos[1], t.into()),
-                    &context.draw_state, ts.trans, graphics);
-                line_from_to(
-                    color, t.into(), ts.pos, new_pos, ts.trans, graphics);
+                ctx.draw_line(
+                    color,
+                    ShapeRotation::LeftBottom(0.0),
+                    ts.pos,
+                    new_pos,
+                    t.into());
                 ts.pos = new_pos;
             },
             Turtle::Rect(rw, rh, clr) => {
                 let wh = ((rw.calc(regs) * ts.w as f32) / 2.0) as f64;
                 let hh = ((rh.calc(regs) * ts.h as f32) / 2.0) as f64;
                 let c = clr.calc(regs);
-                rectangle(
+                let angle = vecmath::vec2_dot([0.0, 1.0], ts.dir);
+                ctx.draw_rect_fill(
                     c,
-                    [-wh, -hh, wh * 2.0, hh * 2.0],
-                    ts.trans,
-                    graphics);
-                ()
+                    ShapeRotation::Center(angle),
+                    [-wh, -hh],
+                    [wh * 2.0, hh * 2.0]);
             },
         }
     }

@@ -5,8 +5,10 @@
 //use sdl2::rect::Rect;
 //use sdl2::rect::Point;
 
+mod turtle;
 mod signals;
 use signals::*;
+use turtle::*;
 
 extern crate piston_window;
 use piston_window::*;
@@ -16,7 +18,6 @@ use std::cell::RefCell;
 use std::time::{Instant};
 use wlambda;
 use wlambda::vval::VVal;
-use vecmath;
 
 
 /* TODO:
@@ -454,10 +455,6 @@ pub fn main() -> Result<(), String> {
 //                        clx.add_turtle(Turtle::Area((aw, ah), t));
 //                    },
 //                  "
-                "c_init" => {
-                    env.with_user_do(|clx: &mut ClContext|
-                        clx.add_turtle(Turtle::CtxInit));
-                },
                 "with_state" => {
                     env.with_user_do(|clx: &mut ClContext|
                         clx.push_turtle());
@@ -470,17 +467,6 @@ pub fn main() -> Result<(), String> {
                         },
                         Err(e) => return Err(e),
                     }
-                },
-                "c_move" => {
-                    getOpIn!(a1, xo);
-                    getOpIn!(a2, yo);
-                    env.with_user_do(|clx: &mut ClContext|
-                        clx.add_turtle(Turtle::CtxMove(xo, yo)));
-                },
-                "c_rot" => {
-                    getOpIn!(a1, rot);
-                    env.with_user_do(|clx: &mut ClContext|
-                        clx.add_turtle(Turtle::CtxRot(rot)));
                 },
                 "look_dir" => {
                     getOpIn!(a1, x);
@@ -607,8 +593,6 @@ pub fn main() -> Result<(), String> {
                 h:      scale_size,
                 dir:    [1.0, 0.0],
                 pos:    [0.0, 0.0],
-                init_trans: trans,
-                trans: trans,
             };
             t.exec(&mut ts, &clctx.borrow().sim.regs, &context, graphics);
 
