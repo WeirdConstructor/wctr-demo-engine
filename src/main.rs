@@ -304,6 +304,46 @@ struct ClContext {
     turtle_stack:    Vec<Vec<Turtle>>,
 }
 
+struct Painter<'a, T>
+    where T: 'a + Graphics {
+    ctx: &'a piston_window::Context,
+    g: &'a mut T,
+}
+
+impl<'a, T> TurtleDrawing for Painter<'a, T>
+    where T: 'a + Graphics {
+    fn draw_line(&mut self, color: [f32; 4], rot: ShapeRotation, from: [f32; 2], to: [f32; 2], thickness: f32) {
+        let o = Ellipse::new(color);
+        o.draw(
+            ellipse::circle(from[0] as f64, from[0] as f64, thickness as f64),
+            &self.ctx.draw_state, self.ctx.transform, self.g);
+        o.draw(
+            ellipse::circle(to[0] as f64, to[1] as f64, thickness as f64),
+            &self.ctx.draw_state, self.ctx.transform, self.g);
+        line_from_to(
+            color, thickness as f64,
+            [from[0] as f64, from[1] as f64],
+            [to[0] as f64, to[1] as f64],
+            self.ctx.transform, self.g);
+    }
+
+    fn draw_rect_fill(&mut self, color: [f32; 4], rot: ShapeRotation, pos: [f32; 2], size: [f32; 2]) {
+        let rot = match rot {
+            ShapeRotation::Center(a) => a,
+            _ => 0.0,
+        };
+        println!("ROT: {}", rot);
+        rectangle(
+            color,
+            [(pos[0] - size[0] / 2.0) as f64,
+             (pos[1] - size[1] / 2.0) as f64,
+             size[0] as f64,
+             size[1] as f64],
+            self.ctx.transform.rot_rad(rot as f64),
+            self.g);
+    }
+}
+
 impl ClContext {
     fn new_op(&mut self, idx: usize, t: &str) -> Option<usize> {
         let sim = &mut self.sim;
@@ -558,13 +598,28 @@ pub fn main() -> Result<(), String> {
     let mut cnt = 0;
     let mut avg = 0;
 
+
     let start_time = Instant::now();
     while let Some(event) = window.next() {
         let ws = window.draw_size();
 
-        window.draw_2d(&event, |context, graphics, _device| {
+        window.draw_2d(&event, |mut context, graphics, _device| {
             extern crate palette;
             use palette::{Rgb};
+
+            clear([0.1; 4], graphics);
+
+            let scale_size = 200.0 as f32;
+
+            context.transform =
+                context.transform.trans(
+                    ws.width / 2.0 as f64,
+                    ws.height / 2.0 as f64);
+
+            let mut p = Painter {
+                ctx: &context,
+                g: graphics,
+            };
 
             let b = Instant::now();
 
@@ -579,22 +634,8 @@ pub fn main() -> Result<(), String> {
             clctx.borrow_mut().exec(now_time as f32);
             let t = clctx.borrow_mut().cur_turtle_cmds[0].clone();
 
-            clear([0.1; 4], graphics);
-
-            let scale_size = 200.0;
-
-            let trans =
-                context.transform.trans(
-                    ws.width  / 2.0,   //- scale_size / 2.0,
-                    ws.height / 2.0);  //- scale_size / 2.0);
-
-            let mut ts = TurtleState {
-                w:      scale_size,
-                h:      scale_size,
-                dir:    [1.0, 0.0],
-                pos:    [0.0, 0.0],
-            };
-            t.exec(&mut ts, &clctx.borrow().sim.regs, &context, graphics);
+            let mut ts = TurtleState::new(scale_size, scale_size);
+            t.exec(&mut ts, &clctx.borrow().sim.regs, &mut p);
 
             avg += b.elapsed().as_millis();
             cnt += 1;
