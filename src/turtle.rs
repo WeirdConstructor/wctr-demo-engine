@@ -85,7 +85,10 @@ impl Turtle {
                 let c = clr.calc(regs);
 
 //                let angle = vecmath::vec2_dot([0.0, 1.0], ts.dir).acos();
-                let angle = 2.0*std::f32::consts::PI - ((1.0 as f32).atan2(0.0) - ts.dir[1].atan2(ts.dir[0]));
+                let angle =
+                    2.0*std::f32::consts::PI
+                    - ((1.0 as f32).atan2(0.0)
+                       - ts.dir[1].atan2(ts.dir[0]));
                 println!("RO {} => {:?}", angle, ts.dir);
 
                 ctx.draw_rect_fill(

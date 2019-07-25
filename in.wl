@@ -25,6 +25,7 @@
 
 
 !outreg = new 0 :sin;
+!s2     = new 1 :sin;
 displayln "SIN: " outreg;
 #range 1 10000 1 {
 #    new _ :sin;
@@ -42,6 +43,8 @@ t :with_state {
     t :look_dir $[:mul, outreg, 4] 1;
     t :rect 0.2 1.0 cborder;
     t :line 0.75 2 clr2;
+    t :look_dir $[:mul, outreg, 1] 1;
+    t :line 0.75 2 clr2;
 ##    t :c_move 1.0  0.0;
 #    t :rect 0.1 0.1 cborder;
 ##    t :c_move 0.0  1.0;
@@ -49,8 +52,8 @@ t :with_state {
 ##    t :c_move -1.0 0;
 #    t :rect 0.1 0.1 cborder;
 };
-t :look_dir 1 1;
-t :line 1 0.5 clr;
+#t :look_dir 1 1;
+#t :line 1 0.5 clr;
 
 ## middle box
 #t :rect
