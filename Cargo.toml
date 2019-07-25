@@ -7,9 +7,8 @@ edition = "2018"
 [dependencies]
 palette            = "0.2"
 chrono             = "0.4.6"
-piston2d-graphics  = "0.32.0"
-piston_window      = "0.98.0"
 wlambda            = { path = "../wlambda" }
+ggez               = "0.5.1"
 vecmath            = "1.0.0"
 nalgebra           = "0.18.0"
 mint               = "0.5.1"

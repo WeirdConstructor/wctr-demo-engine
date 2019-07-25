@@ -2,6 +2,24 @@ use vecmath;
 use crate::signals::OpIn;
 use crate::signals::ColorIn;
 
+// Turtle TODO:
+//      color   (3 arbitrary OpIn regs: hsv)
+//      push        - state push (pos, direction, color)
+//      pop         - state pop
+//      move_to
+//      rot_rad (direction from last 2 movements)
+//      rot_deg (direction from last 2 movements)
+//      line_to
+//      line_walk
+//      rect_walk
+//      rect_to
+//      rect
+//      arc
+//      ellipse_walk
+//      ellipse_to
+//      ellipse
+
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Turtle {
     Commands(Vec<Turtle>),
@@ -89,7 +107,7 @@ impl Turtle {
                     2.0*std::f32::consts::PI
                     - ((1.0 as f32).atan2(0.0)
                        - ts.dir[1].atan2(ts.dir[0]));
-                println!("RO {} => {:?}", angle, ts.dir);
+                //d// println!("RO {} => {:?}", angle, ts.dir);
 
                 ctx.draw_rect_fill(
                     c,
