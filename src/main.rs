@@ -78,6 +78,32 @@ struct Painter<'a> {
     ctx: &'a mut Context,
 }
 
+impl<'a> Painter<'a> {
+    fn draw_rect(&mut self, color: [f32; 4], rot: ShapeRotation, pos: [f32; 2], size: [f32; 2], filled: bool, thickness: f32) {
+        let rot = match rot {
+            ShapeRotation::Center(a) => a,
+            _ => 0.0,
+        };
+        let r =
+            graphics::Mesh::new_rectangle(
+                self.ctx,
+                if filled {
+                    graphics::DrawMode::fill()
+                } else {
+                    graphics::DrawMode::stroke(thickness)
+                },
+                graphics::Rect::new(-size[0] / 2.0, -size[1] / 2.0, size[0], size[1]),
+                graphics::Color::from(color)).unwrap();
+        graphics::draw(
+            self.ctx,
+            &r,
+            ([pos[0], pos[1]],
+             rot,
+             [0.0, 0.0],
+             graphics::WHITE)).unwrap();
+    }
+}
+
 impl<'a> TurtleDrawing for Painter<'a> {
     fn draw_line(&mut self, color: [f32; 4], _rot: ShapeRotation, from: [f32; 2], to: [f32; 2], thickness: f32) {
         let line =
@@ -92,35 +118,12 @@ impl<'a> TurtleDrawing for Painter<'a> {
             (from, 0.0, [0.0, 0.0], graphics::WHITE)).unwrap();
     }
 
+    fn draw_rect_outline(&mut self, color: [f32; 4], rot: ShapeRotation, pos: [f32; 2], size: [f32; 2], thickness: f32) {
+        self.draw_rect(color, rot, pos, size, false, thickness);
+    }
+
     fn draw_rect_fill(&mut self, color: [f32; 4], rot: ShapeRotation, pos: [f32; 2], size: [f32; 2]) {
-
-        let rot = match rot {
-            ShapeRotation::Center(a) => a,
-            _ => 0.0,
-        };
-        let r =
-            graphics::Mesh::new_rectangle(
-                self.ctx,
-                graphics::DrawMode::fill(),
-                graphics::Rect::new(pos[0], pos[1], size[0], size[1]),
-                graphics::Color::from(color)).unwrap();
-        graphics::draw(
-            self.ctx,
-            &r,
-            ([pos[0] - size[0] / 2.0,
-              pos[1] - size[1] / 2.0],
-             rot,
-             [size[0] / 2.0, size[1] / 2.0],
-             graphics::WHITE)).unwrap();
-
-//        rectangle(
-//            color,
-//            [(pos[0] - size[0] / 2.0) as f64,
-//             (pos[1] - size[1] / 2.0) as f64,
-//             size[0] as f64,
-//             size[1] as f64],
-//            self.ctx.transform.rot_rad(rot as f64),
-//            self.g);
+        self.draw_rect(color, rot, pos, size, true, 0.0);
     }
 }
 
@@ -155,12 +158,12 @@ impl EventHandler for WCtrDemEngine {
         let sz = graphics::drawable_size(ctx);
         let param =
             graphics::DrawParam::from(
-                ([sz.0 / 2.0, sz.1 / 2.0],
-                 0.0,
-                 [0.0, 0.0],
-                 graphics::BLACK));
-        graphics::push_transform(ctx, Some(param.to_matrix()));
-        graphics::apply_transformations(ctx)?;
+                ([10.0, 10.0],));
+//                 0.0,
+//                 [0.0, 0.0],
+//                 graphics::BLACK));
+//        graphics::push_transform(ctx, Some(param.to_matrix()));
+//        graphics::apply_transformations(ctx)?;
 
         let now_time = ggez::timer::time_since_start(ctx).as_millis();
         let scale_size = 300.0;
@@ -180,21 +183,19 @@ fn main() {
             .window_setup(ggez::conf::WindowSetup {
                 title: "wctr_dem_engine".to_owned(),
                 samples: ggez::conf::NumSamples::Four,
-                vsync: true,
-                icon: "".to_owned(),
-                srgb: true,
+                ..Default::default()
             })
             .window_mode(ggez::conf::WindowMode {
-                width: 640.0,
-                height: 480.0,
-                maximized: false,
+                width:           640.0,
+                height:          480.0,
+                maximized:       false,
                 fullscreen_type: ggez::conf::FullscreenType::Windowed,
-                borderless: false,
-                min_width: 0.0,
-                max_width: 0.0,
-                min_height: 0.0,
-                max_height: 0.0,
-                resizable: true,
+                borderless:      false,
+                min_width:       0.0,
+                max_width:       0.0,
+                min_height:      0.0,
+                max_height:      0.0,
+                resizable:       true,
             })
            .build()
            .unwrap();

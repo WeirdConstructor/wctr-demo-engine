@@ -167,6 +167,7 @@ impl WLambdaCtx {
                 let a1 = env.arg(1).clone();
                 let a2 = env.arg(2).clone();
                 let a3 = env.arg(3).clone();
+                let a4 = env.arg(4).clone();
 
                 match &node_type[..] {
                     "cmds" => {
@@ -201,14 +202,6 @@ impl WLambdaCtx {
                         env.with_user_do(|clx: &mut ClContext|
                             clx.add_turtle(Turtle::LookDir(x, y)));
                     },
-                    "line" => {
-                        getOpIn!(a1, n);
-                        getOpIn!(a2, t);
-                        getColorIn!(a3, clr);
-
-                        env.with_user_do(|clx: &mut ClContext|
-                            clx.add_turtle(Turtle::Line(n, t, clr)));
-                    },
                     "rect" => {
                         getOpIn!(a1, w);
                         getOpIn!(a2, h);
@@ -216,6 +209,23 @@ impl WLambdaCtx {
 
                         env.with_user_do(|clx: &mut ClContext|
                             clx.add_turtle(Turtle::Rect(w, h, clr)));
+                    },
+                    "rectline" => {
+                        getOpIn!(a1, w);
+                        getOpIn!(a2, h);
+                        getOpIn!(a3, t);
+                        getColorIn!(a4, clr);
+
+                        env.with_user_do(|clx: &mut ClContext|
+                            clx.add_turtle(Turtle::RectLine(w, h, t, clr)));
+                    },
+                    "line" => {
+                        getOpIn!(a1, n);
+                        getOpIn!(a2, t);
+                        getColorIn!(a3, clr);
+
+                        env.with_user_do(|clx: &mut ClContext|
+                            clx.add_turtle(Turtle::Line(n, t, clr)));
                     },
                     _ => {
                         return Ok(VVal::err_msg(

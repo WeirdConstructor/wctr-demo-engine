@@ -26,6 +26,7 @@ pub enum Turtle {
     LookDir(OpIn, OpIn),
     WithState(Box<Turtle>),
     Rect(OpIn, OpIn, ColorIn),
+    RectLine(OpIn, OpIn, OpIn, ColorIn),
     Line(OpIn, OpIn, ColorIn),
 }
 
@@ -53,11 +54,18 @@ impl TurtleState {
             dir: [0.0, 1.0],
         }
     }
+
+    pub fn get_direction_angle(&self) -> f32 {
+        2.0 * std::f32::consts::PI
+        - ((1.0 as f32).atan2(0.0)
+           - self.dir[1].atan2(self.dir[0]))
+    }
 }
 
 pub trait TurtleDrawing {
     fn draw_line(&mut self, color: [f32; 4], rot: ShapeRotation, from: [f32; 2], to: [f32; 2], thickness: f32);
     fn draw_rect_fill(&mut self, color: [f32; 4], rot: ShapeRotation, pos: [f32; 2], size: [f32; 2]);
+    fn draw_rect_outline(&mut self, color: [f32; 4], rot: ShapeRotation, pos: [f32; 2], size: [f32; 2], thickness: f32);
 }
 
 impl Turtle {
@@ -97,22 +105,30 @@ impl Turtle {
                     t.into());
                 ts.pos = new_pos;
             },
+            Turtle::RectLine(rw, rh, thick, clr) => {
+                let w = rw.calc(regs) * ts.w;
+                let h = rh.calc(regs) * ts.h;
+                let t = thick.calc(regs);
+                let c = clr.calc(regs);
+                let angle = ts.get_direction_angle();
+
+                ctx.draw_rect_outline(
+                    c,
+                    ShapeRotation::Center(angle),
+                    [ts.pos[0], ts.pos[1]],
+                    [w, h],
+                    t);
+            },
             Turtle::Rect(rw, rh, clr) => {
                 let w = rw.calc(regs) * ts.w;
                 let h = rh.calc(regs) * ts.h;
                 let c = clr.calc(regs);
-
-//                let angle = vecmath::vec2_dot([0.0, 1.0], ts.dir).acos();
-                let angle =
-                    2.0*std::f32::consts::PI
-                    - ((1.0 as f32).atan2(0.0)
-                       - ts.dir[1].atan2(ts.dir[0]));
-                //d// println!("RO {} => {:?}", angle, ts.dir);
+                let angle = ts.get_direction_angle();
 
                 ctx.draw_rect_fill(
                     c,
                     ShapeRotation::Center(angle),
-                    [ts.pos[0], ts.pos[0]],
+                    [ts.pos[0], ts.pos[1]],
                     [w, h]);
             },
         }
