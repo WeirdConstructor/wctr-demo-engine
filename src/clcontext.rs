@@ -13,6 +13,7 @@ use crate::turtle::TurtleDrawing;
 
 pub struct ClContext {
     sim:             Simulator,
+    dbg:             DebugRegisters,
     cur_turtle_cmds: Vec<Turtle>,
     turtle_stack:    Vec<Vec<Turtle>>,
 }
@@ -24,6 +25,7 @@ impl ClContext {
                 ops:  Vec::new(),
                 regs: Vec::new(),
             },
+            dbg: DebugRegisters::new(),
             cur_turtle_cmds: Vec::new(),
             turtle_stack:    Vec::new(),
         }))
@@ -98,6 +100,10 @@ impl ClContext {
         let prev_t = self.turtle_stack.pop().unwrap();
         Turtle::Commands(
             std::mem::replace(&mut self.cur_turtle_cmds, prev_t))
+    }
+
+    fn show_debug_registers<T>(&self, view: &mut T) where T: RegisterView {
+        self.dbg.show(&self.sim.regs[..], view);
     }
 }
 
@@ -266,6 +272,19 @@ impl WLambdaCtx {
             }, Some(3), Some(3));
 
         genv.borrow_mut().add_func(
+            "debug_reg", |env: &mut Env, _argc: usize| {
+                let name = env.arg(0).s_raw();
+                let a    = env.arg(1);
+                getOpIn!(a, op_in);
+
+                env.with_user_do(|clx: &mut ClContext| {
+                    clx.dbg.add(name.clone(), op_in);
+                });
+
+                Ok(VVal::Bol(true))
+            }, Some(2), Some(2));
+
+        genv.borrow_mut().add_func(
             "reg", |env: &mut Env, argc: usize| {
                 let reg = env.arg(0).i() as usize;
                 let val = env.arg(1).f() as f32;
@@ -330,5 +349,9 @@ impl WLambdaCtx {
 
         let mut ts = TurtleState::new(scale_size, scale_size);
         t.exec(&mut ts, &self.clctx.borrow().sim.regs, p);
+    }
+
+    pub fn show_debug_registers<T>(&mut self, p: &mut T) where T: RegisterView {
+        self.clctx.borrow().dbg.show(&self.clctx.borrow().sim.regs, p);
     }
 }

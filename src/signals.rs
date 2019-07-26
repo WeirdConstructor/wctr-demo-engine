@@ -187,3 +187,32 @@ pub struct Simulator {
     pub regs:   Vec<f32>,
     pub ops:    Vec<Box<dyn DemOp>>,
 }
+
+pub struct DebugRegisters {
+    pub debug_regs: Vec<(String, OpIn)>,
+}
+
+impl DebugRegisters {
+    pub fn new() -> Self {
+        DebugRegisters { debug_regs: Vec::new() }
+    }
+
+    pub fn add(&mut self, name: String, op_in: OpIn) {
+        self.debug_regs.push((name, op_in));
+    }
+
+    pub fn show<T>(&self, regs: &[f32], view: &mut T) where T: RegisterView {
+        view.start_print_registers();
+        for r in self.debug_regs.iter() {
+            view.print_register(&r.0, r.1.calc(regs));
+        }
+        view.end_print_registers();
+    }
+}
+
+pub trait RegisterView {
+    fn start_print_registers(&mut self);
+    fn print_register(&mut self, name: &str, value: f32);
+    fn end_print_registers(&mut self);
+}
+

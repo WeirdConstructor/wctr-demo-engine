@@ -76,6 +76,8 @@ Basic building blocks:
 
 struct Painter<'a> {
     ctx: &'a mut Context,
+    reg_view_font: &'a graphics::Font,
+    cur_reg_line: usize,
 }
 
 impl<'a> Painter<'a> {
@@ -101,6 +103,35 @@ impl<'a> Painter<'a> {
              rot,
              [0.0, 0.0],
              graphics::WHITE)).unwrap();
+    }
+
+    fn draw_text(&mut self, pos: [f32; 2], size: f32, text: String) {
+        let txt =
+            graphics::Text::new((text, *self.reg_view_font, size));
+        graphics::draw(
+            self.ctx, &txt,
+            (pos, 0.0, [0.0, 0.0], graphics::WHITE)).unwrap();
+    }
+}
+
+impl<'a> signals::RegisterView for Painter<'a> {
+    fn start_print_registers(&mut self) {
+        self.cur_reg_line = 0;
+    }
+
+    fn print_register(&mut self, name: &str, value: f32) {
+        let sz = graphics::drawable_size(self.ctx);
+        let font_size = 20.0;
+        self.draw_text(
+            [-(sz.0 / 2.0),
+             -(sz.1 / 2.0)
+             + self.cur_reg_line as f32 * (font_size + 1.0)],
+            font_size,
+            format!("{:<10} = {}", name, value));
+        self.cur_reg_line += 1;
+    }
+
+    fn end_print_registers(&mut self) {
     }
 }
 
@@ -174,19 +205,10 @@ impl EventHandler for WCtrDemEngine {
         let now_time = ggez::timer::time_since_start(ctx).as_millis();
         let scale_size = 300.0;
         {
-            let mut p = Painter { ctx };
+            let mut p = Painter { ctx, cur_reg_line: 0, reg_view_font: &self.debug_font };
             self.wlctx.one_step(now_time as i64, scale_size, &mut p);
+            self.wlctx.show_debug_registers(&mut p);
         }
-
-        let text1 =
-            graphics::Text::new(
-                (format!("FPS: {:.1}", ggez::timer::fps(ctx)),
-                 self.debug_font,
-                 24.0));
-        graphics::draw(
-            ctx,
-            &text1,
-            ([10.0, 10.0], 0.0, [0.0, 0.0], graphics::WHITE)).unwrap();
 
         graphics::present(ctx)
     }

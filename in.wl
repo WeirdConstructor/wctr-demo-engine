@@ -2,6 +2,8 @@
 !s2 = new 1 :sin;
 input 0 :freq $[:mul, s2, 0.0001];
 input 1 :freq 0.0003;
+debug_reg :sin1 $[:reg, s1];
+debug_reg :sin2 $[:reg, s2];
 
 !clr = $[
     $[:mul, s1, 1000.0],
