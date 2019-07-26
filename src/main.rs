@@ -80,28 +80,39 @@ struct Painter<'a> {
 
 impl<'a> TurtleDrawing for Painter<'a> {
     fn draw_line(&mut self, color: [f32; 4], _rot: ShapeRotation, from: [f32; 2], to: [f32; 2], thickness: f32) {
-//        println!("COLO {:?} => {:?}", color, graphics::Color::from(color));
-        let line = graphics::Mesh::new_line(self.ctx, &[[0.0, 0.0], [to[0] - from[0], to[1] - from[1]]], 2.0, graphics::Color::from(color)).unwrap();
-        graphics::draw(self.ctx, &line, (from, 0.0, [0.0, 0.0], graphics::WHITE));
-//        let o = Ellipse::new(color);
-//        o.draw(
-//            ellipse::circle(from[0] as f64, from[1] as f64, thickness as f64),
-//            &self.ctx.draw_state, self.ctx.transform, self.g);
-//        o.draw(
-//            ellipse::circle(to[0] as f64, to[1] as f64, thickness as f64),
-//            &self.ctx.draw_state, self.ctx.transform, self.g);
-//        line_from_to(
-//            color, thickness as f64,
-//            [from[0] as f64, from[1] as f64],
-//            [to[0] as f64, to[1] as f64],
-//            self.ctx.transform, self.g);
+        let line =
+            graphics::Mesh::new_line(
+                self.ctx,
+                &[[0.0, 0.0], [to[0] - from[0], to[1] - from[1]]],
+                thickness,
+                graphics::Color::from(color)).unwrap();
+        graphics::draw(
+            self.ctx,
+            &line,
+            (from, 0.0, [0.0, 0.0], graphics::WHITE)).unwrap();
     }
 
     fn draw_rect_fill(&mut self, color: [f32; 4], rot: ShapeRotation, pos: [f32; 2], size: [f32; 2]) {
-//        let rot = match rot {
-//            ShapeRotation::Center(a) => a,
-//            _ => 0.0,
-//        };
+
+        let rot = match rot {
+            ShapeRotation::Center(a) => a,
+            _ => 0.0,
+        };
+        let r =
+            graphics::Mesh::new_rectangle(
+                self.ctx,
+                graphics::DrawMode::fill(),
+                graphics::Rect::new(pos[0], pos[1], size[0], size[1]),
+                graphics::Color::from(color)).unwrap();
+        graphics::draw(
+            self.ctx,
+            &r,
+            ([pos[0] - size[0] / 2.0,
+              pos[1] - size[1] / 2.0],
+             rot,
+             [size[0] / 2.0, size[1] / 2.0],
+             graphics::WHITE)).unwrap();
+
 //        rectangle(
 //            color,
 //            [(pos[0] - size[0] / 2.0) as f64,
@@ -115,6 +126,7 @@ impl<'a> TurtleDrawing for Painter<'a> {
 
 struct WCtrDemEngine {
     wlctx: WLambdaCtx,
+    i: i64,
 }
 
 impl WCtrDemEngine {
@@ -122,7 +134,7 @@ impl WCtrDemEngine {
         let mut wlctx = WLambdaCtx::new();
         wlctx.init();
         wlctx.load_script("in.wl");
-        WCtrDemEngine { wlctx }
+        WCtrDemEngine { wlctx, i: 0 }
     }
 }
 
@@ -134,12 +146,24 @@ impl EventHandler for WCtrDemEngine {
     fn draw(&mut self, ctx: &mut Context) -> GameResult<()> {
         graphics::clear(ctx, graphics::BLACK);
 
-        let param = graphics::DrawParam::from(([0.0, 0.0], 0.0, [10.0, 100.0], graphics::BLACK));
+        self.i += 1;
+        if self.i > 100 {
+            println!("FPS: {}", ggez::timer::fps(ctx));
+            self.i = 0;
+        }
+
+        let sz = graphics::drawable_size(ctx);
+        let param =
+            graphics::DrawParam::from(
+                ([sz.0 / 2.0, sz.1 / 2.0],
+                 0.0,
+                 [0.0, 0.0],
+                 graphics::BLACK));
         graphics::push_transform(ctx, Some(param.to_matrix()));
         graphics::apply_transformations(ctx)?;
 
         let now_time = ggez::timer::time_since_start(ctx).as_millis();
-        let scale_size = 200.0;
+        let scale_size = 300.0;
         {
             let mut p = Painter { ctx };
             self.wlctx.one_step(now_time as i64, scale_size, &mut p);
@@ -159,6 +183,18 @@ fn main() {
                 vsync: true,
                 icon: "".to_owned(),
                 srgb: true,
+            })
+            .window_mode(ggez::conf::WindowMode {
+                width: 640.0,
+                height: 480.0,
+                maximized: false,
+                fullscreen_type: ggez::conf::FullscreenType::Windowed,
+                borderless: false,
+                min_width: 0.0,
+                max_width: 0.0,
+                min_height: 0.0,
+                max_height: 0.0,
+                resizable: true,
             })
            .build()
            .unwrap();
