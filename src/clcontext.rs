@@ -42,6 +42,7 @@ impl ClContext {
         let out_reg = o.get_output_reg("out");
 
         sim.ops.insert(idx, o);
+        println!("INSRT {} , {} ", idx, sim.ops.len());
 
         out_reg
     }
@@ -61,6 +62,13 @@ impl ClContext {
         } else {
             0.0
         }
+    }
+
+    fn set_op_input(&mut self, idx: usize, input_name: &str, to: OpIn) -> bool {
+        if idx >= self.sim.ops.len() {
+            return false;
+        }
+        self.sim.ops[idx].set_input(input_name, to)
     }
 
     fn exec(&mut self, t: f32) {
@@ -237,12 +245,33 @@ impl WLambdaCtx {
             }, Some(1), None);
 
         genv.borrow_mut().add_func(
+            "input", |env: &mut Env, _argc: usize| {
+                let op_idx     = env.arg(0).i() as usize;
+                let input_name = env.arg(1).s_raw();
+                let a          = env.arg(2);
+                getOpIn!(a, op_in);
+
+                env.with_user_do(|clx: &mut ClContext| {
+                    if clx.set_op_input(op_idx, &input_name, op_in) {
+                        Ok(VVal::Bol(true))
+                    } else {
+                        Ok(VVal::err_msg(
+                            &format!(
+                                "No such op ({}), or bad input '{}'",
+                                op_idx,
+                                input_name)))
+                    }
+                })
+
+            }, Some(3), Some(3));
+
+        genv.borrow_mut().add_func(
             "reg", |env: &mut Env, argc: usize| {
                 let reg = env.arg(0).i() as usize;
                 let val = env.arg(1).f() as f32;
 
                 if argc > 1 {
-                env.with_user_do(|clx: &mut ClContext| {
+                    env.with_user_do(|clx: &mut ClContext| {
                         clx.set_reg(reg, val);
                     });
                     Ok(VVal::Bol(true))

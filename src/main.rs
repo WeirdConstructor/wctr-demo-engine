@@ -128,8 +128,9 @@ impl<'a> TurtleDrawing for Painter<'a> {
 }
 
 struct WCtrDemEngine {
-    wlctx: WLambdaCtx,
-    i: i64,
+    wlctx:      WLambdaCtx,
+    debug_font: graphics::Font,
+    i:          i64,
 }
 
 impl WCtrDemEngine {
@@ -137,7 +138,12 @@ impl WCtrDemEngine {
         let mut wlctx = WLambdaCtx::new();
         wlctx.init();
         wlctx.load_script("in.wl");
-        WCtrDemEngine { wlctx, i: 0 }
+        let font = graphics::Font::new(ctx, "/DejaVuSansMono.ttf").unwrap();
+        WCtrDemEngine {
+            wlctx,
+            i: 0,
+            debug_font: font,
+        }
     }
 }
 
@@ -158,12 +164,12 @@ impl EventHandler for WCtrDemEngine {
         let sz = graphics::drawable_size(ctx);
         let param =
             graphics::DrawParam::from(
-                ([10.0, 10.0],));
+                ([sz.0 / 2.0, sz.1 / 2.0],));
 //                 0.0,
 //                 [0.0, 0.0],
 //                 graphics::BLACK));
-//        graphics::push_transform(ctx, Some(param.to_matrix()));
-//        graphics::apply_transformations(ctx)?;
+        graphics::push_transform(ctx, Some(param.to_matrix()));
+        graphics::apply_transformations(ctx)?;
 
         let now_time = ggez::timer::time_since_start(ctx).as_millis();
         let scale_size = 300.0;
@@ -172,7 +178,22 @@ impl EventHandler for WCtrDemEngine {
             self.wlctx.one_step(now_time as i64, scale_size, &mut p);
         }
 
+        let text1 =
+            graphics::Text::new(
+                (format!("FPS: {:.1}", ggez::timer::fps(ctx)),
+                 self.debug_font,
+                 24.0));
+        graphics::draw(
+            ctx,
+            &text1,
+            ([10.0, 10.0], 0.0, [0.0, 0.0], graphics::WHITE)).unwrap();
+
         graphics::present(ctx)
+    }
+
+    fn resize_event(&mut self, ctx: &mut Context, width: f32, height: f32) {
+        graphics::set_screen_coordinates(ctx,
+            graphics::Rect::new(0.0, 0.0, width, height)).unwrap();
     }
 }
 

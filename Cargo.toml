@@ -8,7 +8,8 @@ edition = "2018"
 palette            = "0.2"
 chrono             = "0.4.6"
 wlambda            = { path = "../wlambda" }
-ggez               = "0.5.1"
+ggez               = { path = "../ggez" }
+#"0.5.1"
 vecmath            = "1.0.0"
 nalgebra           = "0.18.0"
 mint               = "0.5.1"

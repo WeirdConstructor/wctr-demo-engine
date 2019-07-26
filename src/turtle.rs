@@ -33,7 +33,7 @@ pub enum Turtle {
 #[derive(Debug, PartialEq, Clone)]
 pub enum ShapeRotation {
     LeftBottom(f32),
-    TopRight(f32),
+//    TopRight(f32),
     Center(f32),
 }
 
