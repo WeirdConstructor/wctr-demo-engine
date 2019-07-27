@@ -351,7 +351,7 @@ impl WLambdaCtx {
         let t = self.clctx.borrow_mut().cur_turtle_cmds[0].clone();
 
         let mut ts = TurtleState::new(scale_size, scale_size);
-        t.exec(&mut ts, &self.clctx.borrow().sim.regs, p);
+        t.exec(&mut ts, &mut self.clctx.borrow_mut().sim.regs, p);
     }
 
     pub fn show_debug_registers<T>(&mut self, p: &mut T) where T: RegisterView {

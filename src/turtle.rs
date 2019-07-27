@@ -1,6 +1,8 @@
 use vecmath;
 use crate::signals::OpIn;
 use crate::signals::ColorIn;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 // Turtle TODO:
 //      color   (3 arbitrary OpIn regs: hsv)
@@ -28,6 +30,10 @@ pub enum Turtle {
     Rect(OpIn, OpIn, ColorIn),
     RectLine(OpIn, OpIn, OpIn, ColorIn),
     Line(OpIn, OpIn, ColorIn),
+    SeedRand(OpIn),
+    SeedGRand(OpIn),
+    NextRand(usize, usize),
+    NextGRand(usize, usize),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -37,12 +43,29 @@ pub enum ShapeRotation {
     Center(f32),
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Clone)]
 pub struct TurtleState {
     w:          f32,
     h:          f32,
     pos:        [f32; 2],
     dir:        [f32; 2],
+    rand:       [[u64; 2]; 10],
+    randg:      Rc<RefCell<[[u64; 2];100]>>,
+}
+
+// Taken from xoroshiro128 crate under MIT License
+// Implemented by Matthew Scharley (Copyright 2016)
+// https://github.com/mscharley/rust-xoroshiro128
+fn next_xoroshiro128(state: &mut [u64; 2]) -> u64 {
+    let s0: u64     = state[0];
+    let mut s1: u64 = state[1];
+    let result: u64 = s0.wrapping_add(s1);
+
+    s1 ^= s0;
+    state[0] = s0.rotate_left(55) ^ s1 ^ (s1 << 14); // a, b
+    state[1] = s1.rotate_left(36); // c
+
+    result
 }
 
 impl TurtleState {
@@ -52,7 +75,16 @@ impl TurtleState {
             h,
             pos: [0.0, 0.0],
             dir: [0.0, 1.0],
+            rand: [[0; 2]; 10],
+            randg: Rc::new(RefCell::new([[0; 2]; 100])),
         }
+    }
+
+    pub fn go_dir_n(&mut self, n: f32) -> ([f32; 2], [f32; 2]) {
+        let mut new_pos = vecmath::vec2_scale(self.dir, n);
+        new_pos[0] = self.pos[0] + new_pos[0] * self.w;
+        new_pos[1] = self.pos[1] + new_pos[1] * self.h;
+        return (std::mem::replace(&mut self.pos, new_pos), new_pos);
     }
 
     pub fn get_direction_angle(&self) -> f32 {
@@ -71,7 +103,7 @@ pub trait TurtleDrawing {
 impl Turtle {
     pub fn exec<T>(&self,
                ts: &mut TurtleState,
-               regs: &[f32],
+               regs: &mut [f32],
                ctx: &mut T)
         where T: TurtleDrawing {
         match self {
@@ -79,6 +111,27 @@ impl Turtle {
                 for c in v.iter() {
                     c.exec(ts, regs, ctx);
                 }
+            },
+            Turtle::SeedRand(seed) => {
+                let seed = seed.calc(regs) as u64;
+                for i in 0..10 {
+                    let a : u64 = i + seed + 0x193a6754a8a7d469;
+                    let b : u64 = (i * 7) + seed + 0x97830e05113ba7bb;
+                    ts.rand[i as usize] = [a, b];
+                }
+            },
+            Turtle::SeedGRand(seed) => {
+                let seed = seed.calc(regs) as u64;
+                for i in 0..100 {
+                    let a : u64 = i + seed + 0x193a6754a8a7d469;
+                    let b : u64 = (i * 7) + seed + 0x97830e05113ba7bb;
+                    ts.rand[i as usize] = [a, b];
+                }
+            },
+            Turtle::NextRand(idx, reg_idx) => {
+//                regs[reg_idx] = 
+            },
+            Turtle::NextGRand(idx, reg_idx) => {
             },
             Turtle::WithState(cmds) => {
                 let mut sub_ts = ts.clone();
@@ -94,16 +147,13 @@ impl Turtle {
                 let n     = n.calc(regs);
                 let t     = thick.calc(regs);
                 let color = color.calc(regs);
-                let mut new_pos = vecmath::vec2_scale(ts.dir, n as f32);
-                new_pos[0] = ts.pos[0] + new_pos[0] * ts.w;
-                new_pos[1] = ts.pos[1] + new_pos[1] * ts.h;
+                let (pos_a, pos_b) = ts.go_dir_n(n as f32);
                 ctx.draw_line(
                     color,
                     ShapeRotation::LeftBottom(0.0),
-                    ts.pos,
-                    new_pos,
+                    pos_a,
+                    pos_b,
                     t.into());
-                ts.pos = new_pos;
             },
             Turtle::RectLine(rw, rh, thick, clr) => {
                 let w = rw.calc(regs) * ts.w;

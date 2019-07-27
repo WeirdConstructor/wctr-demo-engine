@@ -5,6 +5,7 @@ mod tracker;
 
 use clcontext::WLambdaCtx;
 use turtle::{TurtleDrawing, ShapeRotation};
+use tracker::{TrackerEditorView, Interpolation};
 //use std::time::{Instant};
 
 use ggez::{Context, ContextBuilder, GameResult};
@@ -17,6 +18,10 @@ use ggez::graphics;
     X implement turtle color
     X implement turtle vector direction
     X implement turtle line drawing
+    - implement tracker view GUI
+    - implement editing functions
+    - implement serializing/deserializing of tracker data
+    - implement random signal generator (inputs: frequency, amplitude, offset)
     - check out filemanager project GUI for possible
       utilization as tracker.
     - implement gradient Op with 4 outputs
@@ -133,6 +138,25 @@ impl<'a> signals::RegisterView for Painter<'a> {
     }
 
     fn end_print_registers(&mut self) {
+    }
+}
+
+impl<'a> TrackerEditorView for Painter<'a> {
+    fn start_drawing(&mut self) {
+    }
+
+    fn draw_track_cell(
+        &mut self,
+        row_idx: usize,
+        track_idx: usize,
+        cursor: bool,
+        value: Option<f32>,
+        interp: Interpolation) {
+
+
+    }
+
+    fn end_drawing(&mut self) {
     }
 }
 

@@ -42,7 +42,7 @@ pub enum TrackerInput {
     KeyRight,
 }
 
-trait TrackerEditorView {
+pub trait TrackerEditorView {
     fn start_drawing(&mut self);
     fn draw_track_cell(
         &mut self,
