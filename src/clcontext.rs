@@ -1,5 +1,6 @@
 use crate::signals::*;
 use crate::turtle::*;
+use crate::tracker::*;
 
 use wlambda;
 use wlambda::vval::VVal;
@@ -16,6 +17,7 @@ pub struct ClContext {
     dbg:             DebugRegisters,
     cur_turtle_cmds: Vec<Turtle>,
     turtle_stack:    Vec<Vec<Turtle>>,
+    tracker:         Tracker,
 }
 
 impl ClContext {
@@ -28,6 +30,7 @@ impl ClContext {
             dbg: DebugRegisters::new(),
             cur_turtle_cmds: Vec::new(),
             turtle_stack:    Vec::new(),
+            tracker:         Tracker::new(),
         }))
     }
 

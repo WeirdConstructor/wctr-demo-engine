@@ -1,6 +1,7 @@
 mod turtle;
 mod signals;
 mod clcontext;
+mod tracker;
 
 use clcontext::WLambdaCtx;
 use turtle::{TurtleDrawing, ShapeRotation};
@@ -196,9 +197,6 @@ impl EventHandler for WCtrDemEngine {
         let param =
             graphics::DrawParam::from(
                 ([sz.0 / 2.0, sz.1 / 2.0],));
-//                 0.0,
-//                 [0.0, 0.0],
-//                 graphics::BLACK));
         graphics::push_transform(ctx, Some(param.to_matrix()));
         graphics::apply_transformations(ctx)?;
 
