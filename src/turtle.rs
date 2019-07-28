@@ -56,7 +56,7 @@ pub struct TurtleState {
 // Taken from xoroshiro128 crate under MIT License
 // Implemented by Matthew Scharley (Copyright 2016)
 // https://github.com/mscharley/rust-xoroshiro128
-fn next_xoroshiro128(state: &mut [u64; 2]) -> u64 {
+pub fn next_xoroshiro128(state: &mut [u64; 2]) -> u64 {
     let s0: u64     = state[0];
     let mut s1: u64 = state[1];
     let result: u64 = s0.wrapping_add(s1);
@@ -66,6 +66,17 @@ fn next_xoroshiro128(state: &mut [u64; 2]) -> u64 {
     state[1] = s1.rotate_left(36); // c
 
     result
+}
+
+// Taken from rand::distributions
+// Licensed under the Apache License, Version 2.0
+// Copyright 2018 Developers of the Rand project.
+pub fn u64_to_open01(u: u64) -> f64 {
+    use core::f64::EPSILON;
+    let float_size         = std::mem::size_of::<f64>() as u32 * 8;
+    let fraction           = u >> (float_size - 52);
+    let exponent_bits: u64 = (1023 as u64) << 52;
+    f64::from_bits(fraction | exponent_bits) - (1.0 - EPSILON / 2.0)
 }
 
 impl TurtleState {
