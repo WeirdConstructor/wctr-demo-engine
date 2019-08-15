@@ -34,54 +34,6 @@ impl ClContext {
         }))
     }
 
-    fn new_op(&mut self, idx: usize, t: &str) -> Option<usize> {
-        let sim = &mut self.sim;
-        let mut o : Box<dyn DemOp> = match t {
-            "sin" => { Box::new(DoSin::new()) },
-            _     => { return None; },
-        };
-
-        let new_start_reg = sim.regs.len();
-        sim.regs.resize(sim.regs.len() + o.output_count(), 0.0);
-        o.init_regs(new_start_reg, &mut sim.regs[..]);
-        let out_reg = o.get_output_reg("out");
-
-        sim.ops.insert(idx, o);
-        println!("INSRT {} , {} ", idx, sim.ops.len());
-
-        out_reg
-    }
-
-    fn set_reg(&mut self, idx: usize, v: f32) -> bool {
-        if self.sim.regs.len() > idx {
-            self.sim.regs[idx] = v;
-            true
-        } else {
-            false
-        }
-    }
-
-    fn get_reg(&self, idx: usize) -> f32 {
-        if self.sim.regs.len() > idx {
-            self.sim.regs[idx]
-        } else {
-            0.0
-        }
-    }
-
-    fn set_op_input(&mut self, idx: usize, input_name: &str, to: OpIn) -> bool {
-        if idx >= self.sim.ops.len() {
-            return false;
-        }
-        self.sim.ops[idx].set_input(input_name, to)
-    }
-
-    fn exec(&mut self, t: f32) {
-        for r in self.sim.ops.iter_mut() {
-            r.as_mut().exec(t, &mut self.sim.regs[..]);
-        }
-    }
-
     fn pack_turtle(&mut self) {
         let t =
             Turtle::Commands(
@@ -103,10 +55,6 @@ impl ClContext {
         let prev_t = self.turtle_stack.pop().unwrap();
         Turtle::Commands(
             std::mem::replace(&mut self.cur_turtle_cmds, prev_t))
-    }
-
-    fn show_debug_registers<T>(&self, view: &mut T) where T: RegisterView {
-        self.dbg.show(&self.sim.regs[..], view);
     }
 }
 
