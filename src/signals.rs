@@ -54,10 +54,11 @@ impl OpIn {
             OpIn::RegMulAdd(i, v, a)     => (v * regs[*i]) + a,
             OpIn::RegLerp(i, a, b)       => (a * regs[*i]) + (b * (1.0 - regs[*i])),
             OpIn::RegSStep(i, a, b)      => {
-                let x = (regs[*i] - a) / (b - a);
+                let x = regs[*i];
                 let x = if x < 0.0 { 0.0 } else { x };
                 let x = if x > 1.0 { 1.0 } else { x };
-                x * x * (3.0 - 2.0 * x)
+                let x = x * x * (3.0 - 2.0 * x);
+                a * (1.0 - x) + b * x
             },
             OpIn::RegMap(i, a_frm, b_frm, a_to, b_to) => {
                 let x = (regs[*i] - a_frm) / (b_frm - a_frm);
