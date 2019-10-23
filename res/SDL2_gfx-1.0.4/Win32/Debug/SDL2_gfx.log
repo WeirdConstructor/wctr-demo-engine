@@ -1,0 +1,3 @@
+﻿SDL2_framerate.obj : warning LNK4075: /EDITANDCONTINUE wird aufgrund der Angabe von /SAFESEH ignoriert.
+     Bibliothek "Win32\Debug\SDL2_gfx.lib" und Objekt "Win32\Debug\SDL2_gfx.exp" werden erstellt.
+  SDL2_gfx.vcxproj -> H:\_REPOSITORIES\wctr-demo-engine\res\SDL2_gfx-1.0.4\Win32\Debug\SDL2_gfx.dll
